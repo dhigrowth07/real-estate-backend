@@ -1,0 +1,183 @@
+// Prisma schema for Single-Tenant Real Estate Lead-Property Matching App
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum UserRole {
+  ADMIN
+  AGENT
+}
+
+enum LeadSource {
+  WEBSITE
+  REFERRAL
+  DIRECT_CALL
+  PORTAL
+  WALK_IN
+  OTHER
+}
+
+enum LeadPurpose {
+  BUY
+  RENT
+  INVESTMENT
+}
+
+enum LeadUrgency {
+  IMMEDIATE
+  WITHIN_1_MONTH
+  WITHIN_3_MONTHS
+  EXPLORING
+}
+
+enum LeadStage {
+  NEW
+  CONTACTED
+  REQUIREMENT_GATHERED
+  SITE_VISIT_SCHEDULED
+  NEGOTIATION
+  CLOSED_WON
+  CLOSED_LOST
+}
+
+enum PropertyType {
+  APARTMENT
+  VILLA
+  PLOT
+  COMMERCIAL
+  INDEPENDENT_HOUSE
+}
+
+enum PossessionStatus {
+  READY_TO_MOVE
+  UNDER_CONSTRUCTION
+  WITHIN_3_MONTHS
+  WITHIN_6_MONTHS
+}
+
+enum PropertyStatus {
+  AVAILABLE
+  UNDER_OFFER
+  SOLD
+  INACTIVE
+}
+
+enum MatchStatus {
+  NEW
+  NOTIFIED
+  VIEWED
+  DISMISSED
+}
+
+enum InteractionChannel {
+  CALL
+  WHATSAPP
+  EMAIL
+  MEETING
+  SMS
+  NOTE
+}
+
+enum InteractionType {
+  INITIAL_CONTACT
+  FOLLOW_UP
+  SITE_VISIT
+  PROPOSAL
+  FEEDBACK
+  OTHER
+}
+
+model User {
+  id           String        @id @default(uuid())
+  name         String
+  email        String        @unique
+  passwordHash String
+  role         UserRole      @default(AGENT)
+  leads        Lead[]        @relation("AssignedAgent")
+  interactions Interaction[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@map("users")
+}
+
+model Lead {
+  id                 String         @id @default(uuid())
+  name               String
+  phone              String
+  email              String?
+  source             LeadSource     @default(WEBSITE)
+  budgetMin          Float
+  budgetMax          Float
+  preferredLocations String[]
+  propertyType       PropertyType   @default(APARTMENT)
+  bhk                String?
+  purpose            LeadPurpose    @default(BUY)
+  urgency            LeadUrgency    @default(IMMEDIATE)
+  stage              LeadStage      @default(NEW)
+  assignedAgentId    String?
+  assignedAgent      User?          @relation("AssignedAgent", fields: [assignedAgentId], references: [id], onDelete: SetNull)
+  matches            Match[]
+  interactions       Interaction[]
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  @@map("leads")
+}
+
+model Property {
+  id               String           @id @default(uuid())
+  title            String
+  location         String
+  price            Float
+  propertyType     PropertyType     @default(APARTMENT)
+  bhk              String?
+  sqft             Float?
+  possessionStatus PossessionStatus @default(READY_TO_MOVE)
+  amenities        String[]
+  ownerContact     String
+  images           String[]
+  status           PropertyStatus   @default(AVAILABLE)
+  matches          Match[]
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@map("properties")
+}
+
+model Match {
+  id         String      @id @default(uuid())
+  leadId     String
+  lead       Lead        @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  propertyId String
+  property   Property    @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  score      Float       // 0 - 100
+  status     MatchStatus @default(NEW)
+  breakdown  Json?       // Granular sub-scores (budget, location, type, bhk, possession)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  @@unique([leadId, propertyId])
+  @@map("matches")
+}
+
+model Interaction {
+  id        String             @id @default(uuid())
+  leadId    String
+  lead      Lead               @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  agentId   String
+  agent     User               @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  channel   InteractionChannel @default(CALL)
+  type      InteractionType    @default(FOLLOW_UP)
+  notes     String
+  timestamp DateTime           @default(now())
+  createdAt DateTime           @default(now())
+
+  @@map("interactions")
+}
