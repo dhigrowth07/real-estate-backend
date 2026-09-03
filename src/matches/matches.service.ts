@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   MatchingEngineService,
@@ -6,6 +6,7 @@ import {
   DEFAULT_MATCHING_WEIGHTS,
 } from './matching-engine.service';
 import { SettingsService } from '../settings/settings.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { UpdateMatchStatusDto } from './dto/update-match-status.dto';
 import { MatchFilterDto } from './dto/match-filter.dto';
 import { UpdateMatchingWeightsDto } from './dto/update-matching-weights.dto';
@@ -17,6 +18,8 @@ export class MatchesService {
     private prisma: PrismaService,
     private matchingEngine: MatchingEngineService,
     private settingsService: SettingsService,
+    @Inject(forwardRef(() => NotificationsService))
+    private notificationsService: NotificationsService,
   ) {}
 
   /**
@@ -98,6 +101,10 @@ export class MatchesService {
           breakdown: evaluation.breakdown,
         },
       });
+
+      // Dispatch real-time alert if threshold is met
+      await this.notificationsService.handleMatchAlert(match.id);
+
       results.push(match);
     }
 
@@ -144,6 +151,10 @@ export class MatchesService {
           breakdown: evaluation.breakdown,
         },
       });
+
+      // Dispatch real-time alert if threshold is met
+      await this.notificationsService.handleMatchAlert(match.id);
+
       results.push(match);
     }
 

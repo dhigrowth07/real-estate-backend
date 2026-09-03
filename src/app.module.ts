@@ -8,6 +8,7 @@ import { StorageModule } from './common/storage/storage.module';
 import { LeadsModule } from './leads/leads.module';
 import { PropertiesModule } from './properties/properties.module';
 import { MatchesModule } from './matches/matches.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { InteractionsModule } from './interactions/interactions.module';
 
 @Module({
@@ -24,6 +25,7 @@ import { InteractionsModule } from './interactions/interactions.module';
     LeadsModule,
     PropertiesModule,
     MatchesModule,
+    NotificationsModule,
     InteractionsModule,
   ],
 })
