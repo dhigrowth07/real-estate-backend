@@ -9,6 +9,7 @@ import { LeadsModule } from './leads/leads.module';
 import { PropertiesModule } from './properties/properties.module';
 import { MatchesModule } from './matches/matches.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 import { InteractionsModule } from './interactions/interactions.module';
 
 @Module({
@@ -26,6 +27,7 @@ import { InteractionsModule } from './interactions/interactions.module';
     PropertiesModule,
     MatchesModule,
     NotificationsModule,
+    DashboardModule,
     InteractionsModule,
   ],
 })
