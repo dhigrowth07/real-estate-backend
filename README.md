@@ -138,13 +138,19 @@ The matching engine logic is isolated inside `src/matches/matching-engine.servic
 npm install
 ```
 
-### 2. Database Migration
+### 2. Start PostgreSQL Container (Docker)
+
+```bash
+docker compose up -d
+```
+
+### 3. Database Migration
 
 ```bash
 # Generate Prisma Client
 npx prisma generate
 
-# Run migrations (ensure PostgreSQL is running)
+# Run migrations against local PostgreSQL
 npx prisma migrate dev --name init
 ```
 
