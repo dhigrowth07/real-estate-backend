@@ -36,8 +36,8 @@ export class CreatePropertyDto {
   amenities?: string[];
 
   @IsString()
-  @IsNotEmpty({ message: 'Owner contact is required' })
-  ownerContact: string;
+  @IsOptional()
+  ownerContact?: string;
 
   @IsArray({ message: 'Images must be an array of URLs' })
   @IsString({ each: true, message: 'Each image must be a URL string' })

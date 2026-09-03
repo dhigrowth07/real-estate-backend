@@ -41,7 +41,7 @@ export class PropertiesService {
         sqft: dto.sqft,
         possessionStatus: dto.possessionStatus || 'READY_TO_MOVE',
         amenities: dto.amenities || [],
-        ownerContact: dto.ownerContact,
+        ownerContact: dto.ownerContact || user?.email || user?.phone || 'Direct Agency',
         images: dto.images || [],
         status: dto.status || 'AVAILABLE',
         assignedAgentId,
