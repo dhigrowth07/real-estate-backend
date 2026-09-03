@@ -12,49 +12,50 @@ import { LeadSource, LeadPurpose, LeadUrgency, LeadStage, PropertyType } from '@
 
 export class CreateLeadDto {
   @IsString()
-  @IsNotEmpty()
+  @IsNotEmpty({ message: 'Lead name is required' })
   name: string;
 
   @IsString()
-  @IsNotEmpty()
+  @IsNotEmpty({ message: 'Phone number is required' })
   phone: string;
 
-  @IsEmail()
+  @IsEmail({}, { message: 'Please provide a valid email address' })
   @IsOptional()
   email?: string;
 
-  @IsEnum(LeadSource)
+  @IsEnum(LeadSource, { message: 'Invalid lead source' })
   @IsOptional()
   source?: LeadSource;
 
-  @IsNumber()
-  @Min(0)
+  @IsNumber({}, { message: 'Minimum budget must be a number' })
+  @Min(0, { message: 'Minimum budget cannot be negative' })
   budgetMin: number;
 
-  @IsNumber()
-  @Min(0)
+  @IsNumber({}, { message: 'Maximum budget must be a number' })
+  @Min(0, { message: 'Maximum budget cannot be negative' })
   budgetMax: number;
 
-  @IsArray()
-  @IsString({ each: true })
-  preferredLocations: string[];
+  @IsArray({ message: 'Preferred locations must be an array' })
+  @IsString({ each: true, message: 'Each preferred location must be a string' })
+  @IsOptional()
+  preferredLocations?: string[];
 
-  @IsEnum(PropertyType)
+  @IsEnum(PropertyType, { message: 'Invalid property type' })
   propertyType: PropertyType;
 
   @IsString()
   @IsOptional()
   bhk?: string;
 
-  @IsEnum(LeadPurpose)
+  @IsEnum(LeadPurpose, { message: 'Invalid lead purpose' })
   @IsOptional()
   purpose?: LeadPurpose;
 
-  @IsEnum(LeadUrgency)
+  @IsEnum(LeadUrgency, { message: 'Invalid urgency timeline' })
   @IsOptional()
   urgency?: LeadUrgency;
 
-  @IsEnum(LeadStage)
+  @IsEnum(LeadStage, { message: 'Invalid lead stage' })
   @IsOptional()
   stage?: LeadStage;
 

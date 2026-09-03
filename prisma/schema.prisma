@@ -20,6 +20,11 @@ enum UserRole {
   AGENT
 }
 
+enum AgentVisibilityMode {
+  ASSIGNED_ONLY
+  ALL
+}
+
 enum LeadSource {
   WEBSITE
   REFERRAL
@@ -103,17 +108,45 @@ enum InteractionType {
 // MODELS
 // ------------------------------------------------------------------------------
 
+/// Global Agency settings for the single-tenant business
+model AgencySetting {
+  id                  String              @id @default("default")
+  agentVisibilityMode AgentVisibilityMode @default(ALL)
+  updatedAt           DateTime            @updatedAt
+
+  @@map("agency_settings")
+}
+
+/// Admin-generated invites for agent onboarding
+model Invite {
+  id          String    @id @default(uuid())
+  email       String
+  token       String    @unique
+  role        UserRole  @default(AGENT)
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdById String
+  createdBy   User      @relation("CreatedInvites", fields: [createdById], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+
+  @@index([email])
+  @@index([token])
+  @@map("invites")
+}
+
 /// Represents internal real estate agency users (1 Admin + Agent team)
 model User {
-  id           String        @id @default(uuid())
-  name         String
-  email        String        @unique
-  passwordHash String
-  role         UserRole      @default(AGENT)
-  leads        Lead[]        @relation("AssignedAgent")
-  interactions Interaction[]
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  id                 String        @id @default(uuid())
+  name               String
+  email              String        @unique
+  passwordHash       String
+  role               UserRole      @default(AGENT)
+  leads              Lead[]        @relation("AssignedAgent")
+  propertiesAssigned Property[]    @relation("AssignedPropertyAgent")
+  interactions       Interaction[]
+  invitesCreated     Invite[]      @relation("CreatedInvites")
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
 
   @@index([role])
   @@map("users")
@@ -140,11 +173,15 @@ model Lead {
   interactions       Interaction[]
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
+  deletedAt          DateTime?      // Soft delete timestamp
 
   @@index([stage])
+  @@index([source])
+  @@index([urgency])
   @@index([propertyType])
   @@index([assignedAgentId])
   @@index([createdAt])
+  @@index([deletedAt])
   @@map("leads")
 }
 
@@ -162,15 +199,21 @@ model Property {
   ownerContact     String
   images           String[]
   status           PropertyStatus   @default(AVAILABLE)
+  assignedAgentId  String?
+  assignedAgent    User?            @relation("AssignedPropertyAgent", fields: [assignedAgentId], references: [id], onDelete: SetNull)
   matches          Match[]
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
+  deletedAt        DateTime?        // Soft delete timestamp
 
   @@index([status])
   @@index([propertyType])
   @@index([possessionStatus])
   @@index([price])
+  @@index([bhk])
+  @@index([assignedAgentId])
   @@index([createdAt])
+  @@index([deletedAt])
   @@map("properties")
 }
 

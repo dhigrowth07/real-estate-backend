@@ -24,8 +24,8 @@ export class UpdatePropertyDto {
   bhk?: string;
 
   @IsNumber()
-  @IsOptional()
   @Min(0)
+  @IsOptional()
   sqft?: number;
 
   @IsEnum(PossessionStatus)
@@ -49,4 +49,8 @@ export class UpdatePropertyDto {
   @IsEnum(PropertyStatus)
   @IsOptional()
   status?: PropertyStatus;
+
+  @IsString()
+  @IsOptional()
+  assignedAgentId?: string;
 }

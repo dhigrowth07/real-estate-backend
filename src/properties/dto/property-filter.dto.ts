@@ -1,8 +1,22 @@
-import { IsEnum, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsBoolean, IsEnum, IsNumber, IsOptional, IsString } from 'class-validator';
 import { PropertyType, PropertyStatus, PossessionStatus } from '@prisma/client';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 
 export class PropertyFilterDto {
+  @IsString()
+  @IsOptional()
+  location?: string;
+
+  @IsNumber()
+  @IsOptional()
+  @Type(() => Number)
+  minPrice?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Type(() => Number)
+  maxPrice?: number;
+
   @IsEnum(PropertyType)
   @IsOptional()
   propertyType?: PropertyType;
@@ -15,23 +29,20 @@ export class PropertyFilterDto {
   @IsOptional()
   possessionStatus?: PossessionStatus;
 
-  @IsNumber()
-  @Min(0)
+  @IsString()
   @IsOptional()
-  @Type(() => Number)
-  minPrice?: number;
-
-  @IsNumber()
-  @Min(0)
-  @IsOptional()
-  @Type(() => Number)
-  maxPrice?: number;
+  bhk?: string;
 
   @IsString()
   @IsOptional()
-  location?: string;
+  assignedAgentId?: string;
 
   @IsString()
   @IsOptional()
   search?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  includeDeleted?: boolean;
 }

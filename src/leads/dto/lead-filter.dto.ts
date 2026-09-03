@@ -1,10 +1,19 @@
-import { IsEnum, IsOptional, IsString } from 'class-validator';
-import { LeadStage, PropertyType, LeadPurpose } from '@prisma/client';
+import { IsBoolean, IsEnum, IsOptional, IsString } from 'class-validator';
+import { LeadStage, LeadSource, LeadUrgency, PropertyType, LeadPurpose } from '@prisma/client';
+import { Transform } from 'class-transformer';
 
 export class LeadFilterDto {
   @IsEnum(LeadStage)
   @IsOptional()
   stage?: LeadStage;
+
+  @IsEnum(LeadSource)
+  @IsOptional()
+  source?: LeadSource;
+
+  @IsEnum(LeadUrgency)
+  @IsOptional()
+  urgency?: LeadUrgency;
 
   @IsEnum(PropertyType)
   @IsOptional()
@@ -21,4 +30,9 @@ export class LeadFilterDto {
   @IsString()
   @IsOptional()
   search?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  includeDeleted?: boolean;
 }

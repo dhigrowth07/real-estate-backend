@@ -1,15 +1,27 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { SettingsService } from '../settings/settings.service';
 import { CreatePropertyDto } from './dto/create-property.dto';
 import { UpdatePropertyDto } from './dto/update-property.dto';
 import { PropertyFilterDto } from './dto/property-filter.dto';
-import { Prisma } from '@prisma/client';
+import { Prisma, UserRole, AgentVisibilityMode } from '@prisma/client';
 
 @Injectable()
 export class PropertiesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private settingsService: SettingsService,
+  ) {}
 
-  async create(dto: CreatePropertyDto) {
+  /**
+   * Create a new Property with optional auto-assignment for Agents
+   */
+  async create(user: any, dto: CreatePropertyDto) {
+    let assignedAgentId = dto.assignedAgentId;
+    if (user?.role === UserRole.AGENT && !assignedAgentId) {
+      assignedAgentId = user.id;
+    }
+
     const property = await this.prisma.property.create({
       data: {
         title: dto.title,
@@ -23,15 +35,38 @@ export class PropertiesService {
         ownerContact: dto.ownerContact,
         images: dto.images || [],
         status: dto.status || 'AVAILABLE',
+        assignedAgentId,
+      },
+      include: {
+        assignedAgent: {
+          select: { id: true, name: true, email: true, role: true },
+        },
       },
     });
 
     return property;
   }
 
-  async findAll(filter?: PropertyFilterDto) {
+  /**
+   * List properties with multi-criteria filtering and visibility rules
+   */
+  async findAll(user: any, filter?: PropertyFilterDto) {
     const where: Prisma.PropertyWhereInput = {};
 
+    // By default, exclude soft-deleted properties
+    if (!filter?.includeDeleted || user?.role !== UserRole.ADMIN) {
+      where.deletedAt = null;
+    }
+
+    // Enforce Agent Visibility Rules
+    const visibilityMode = await this.settingsService.getVisibilityMode();
+    if (user?.role === UserRole.AGENT && visibilityMode === AgentVisibilityMode.ASSIGNED_ONLY) {
+      where.assignedAgentId = user.id;
+    } else if (filter?.assignedAgentId) {
+      where.assignedAgentId = filter.assignedAgentId;
+    }
+
+    // Filter criteria
     if (filter?.propertyType) {
       where.propertyType = filter.propertyType;
     }
@@ -40,6 +75,9 @@ export class PropertiesService {
     }
     if (filter?.possessionStatus) {
       where.possessionStatus = filter.possessionStatus;
+    }
+    if (filter?.bhk) {
+      where.bhk = { contains: filter.bhk, mode: 'insensitive' };
     }
     if (filter?.location) {
       where.location = { contains: filter.location, mode: 'insensitive' };
@@ -53,12 +91,17 @@ export class PropertiesService {
       where.OR = [
         { title: { contains: filter.search, mode: 'insensitive' } },
         { location: { contains: filter.search, mode: 'insensitive' } },
+        { bhk: { contains: filter.search, mode: 'insensitive' } },
+        { ownerContact: { contains: filter.search, mode: 'insensitive' } },
       ];
     }
 
     return this.prisma.property.findMany({
       where,
       include: {
+        assignedAgent: {
+          select: { id: true, name: true, email: true, role: true },
+        },
         _count: {
           select: { matches: true },
         },
@@ -67,10 +110,16 @@ export class PropertiesService {
     });
   }
 
-  async findOne(id: string) {
-    const property = await this.prisma.property.findUnique({
-      where: { id },
+  /**
+   * Find one property by ID with relations
+   */
+  async findOne(id: string, user?: any) {
+    const property = await this.prisma.property.findFirst({
+      where: { id, deletedAt: null },
       include: {
+        assignedAgent: {
+          select: { id: true, name: true, email: true, role: true },
+        },
         matches: {
           include: {
             lead: true,
@@ -84,22 +133,93 @@ export class PropertiesService {
       throw new NotFoundException(`Property with ID ${id} not found`);
     }
 
+    // Visibility permission check for agents
+    if (user && user.role === UserRole.AGENT) {
+      const visibilityMode = await this.settingsService.getVisibilityMode();
+      if (
+        visibilityMode === AgentVisibilityMode.ASSIGNED_ONLY &&
+        property.assignedAgentId !== user.id
+      ) {
+        throw new NotFoundException(`Property with ID ${id} not found`);
+      }
+    }
+
     return property;
   }
 
-  async update(id: string, dto: UpdatePropertyDto) {
-    await this.findOne(id);
+  /**
+   * Update property
+   */
+  async update(id: string, dto: UpdatePropertyDto, user?: any) {
+    await this.findOne(id, user);
 
     return this.prisma.property.update({
       where: { id },
       data: dto,
+      include: {
+        assignedAgent: {
+          select: { id: true, name: true, email: true, role: true },
+        },
+      },
     });
   }
 
-  async remove(id: string) {
-    await this.findOne(id);
-    return this.prisma.property.delete({
+  /**
+   * Soft-delete property
+   */
+  async remove(id: string, user?: any) {
+    await this.findOne(id, user);
+
+    await this.prisma.property.update({
       where: { id },
+      data: { deletedAt: new Date() },
+    });
+
+    return {
+      success: true,
+      message: `Property ${id} has been soft-deleted.`,
+    };
+  }
+
+  /**
+   * Restore soft-deleted property
+   */
+  async restore(id: string, user?: any) {
+    const property = await this.prisma.property.findUnique({
+      where: { id },
+      include: {
+        assignedAgent: {
+          select: { id: true, name: true, email: true, role: true },
+        },
+      },
+    });
+
+    if (!property) {
+      throw new NotFoundException(`Property with ID ${id} not found`);
+    }
+
+    if (user && user.role === UserRole.AGENT) {
+      const visibilityMode = await this.settingsService.getVisibilityMode();
+      if (
+        visibilityMode === AgentVisibilityMode.ASSIGNED_ONLY &&
+        property.assignedAgentId !== user.id
+      ) {
+        throw new NotFoundException(`Property with ID ${id} not found`);
+      }
+    }
+
+    if (!property.deletedAt) {
+      throw new BadRequestException('Property is not deleted.');
+    }
+
+    return this.prisma.property.update({
+      where: { id },
+      data: { deletedAt: null },
+      include: {
+        assignedAgent: {
+          select: { id: true, name: true, email: true, role: true },
+        },
+      },
     });
   }
 }

@@ -10,7 +10,7 @@ export class UpdateLeadDto {
   @IsOptional()
   phone?: string;
 
-  @IsEmail()
+  @IsEmail({}, { message: 'Please provide a valid email address' })
   @IsOptional()
   email?: string;
 

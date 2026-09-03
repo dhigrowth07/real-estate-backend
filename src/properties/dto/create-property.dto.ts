@@ -3,48 +3,52 @@ import { PropertyType, PossessionStatus, PropertyStatus } from '@prisma/client';
 
 export class CreatePropertyDto {
   @IsString()
-  @IsNotEmpty()
+  @IsNotEmpty({ message: 'Property title is required' })
   title: string;
 
   @IsString()
-  @IsNotEmpty()
+  @IsNotEmpty({ message: 'Location is required' })
   location: string;
 
-  @IsNumber()
-  @Min(0)
+  @IsNumber({}, { message: 'Price must be a valid number' })
+  @Min(0, { message: 'Price cannot be negative' })
   price: number;
 
-  @IsEnum(PropertyType)
+  @IsEnum(PropertyType, { message: 'Invalid property type' })
   propertyType: PropertyType;
 
   @IsString()
   @IsOptional()
   bhk?: string;
 
-  @IsNumber()
+  @IsNumber({}, { message: 'Sqft must be a number' })
+  @Min(0, { message: 'Sqft cannot be negative' })
   @IsOptional()
-  @Min(0)
   sqft?: number;
 
-  @IsEnum(PossessionStatus)
+  @IsEnum(PossessionStatus, { message: 'Invalid possession status' })
   @IsOptional()
   possessionStatus?: PossessionStatus;
 
-  @IsArray()
-  @IsString({ each: true })
+  @IsArray({ message: 'Amenities must be an array' })
+  @IsString({ each: true, message: 'Each amenity must be a string' })
   @IsOptional()
   amenities?: string[];
 
   @IsString()
-  @IsNotEmpty()
+  @IsNotEmpty({ message: 'Owner contact is required' })
   ownerContact: string;
 
-  @IsArray()
-  @IsString({ each: true })
+  @IsArray({ message: 'Images must be an array of URLs' })
+  @IsString({ each: true, message: 'Each image must be a URL string' })
   @IsOptional()
   images?: string[];
 
-  @IsEnum(PropertyStatus)
+  @IsEnum(PropertyStatus, { message: 'Invalid property status' })
   @IsOptional()
   status?: PropertyStatus;
+
+  @IsString()
+  @IsOptional()
+  assignedAgentId?: string;
 }
