@@ -1,6 +1,13 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  Inject,
+  forwardRef,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../settings/settings.service';
+import { MatchesService } from '../matches/matches.service';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { UpdateLeadDto } from './dto/update-lead.dto';
 import { LeadFilterDto } from './dto/lead-filter.dto';
@@ -11,10 +18,12 @@ export class LeadsService {
   constructor(
     private prisma: PrismaService,
     private settingsService: SettingsService,
+    @Inject(forwardRef(() => MatchesService))
+    private matchesService: MatchesService,
   ) {}
 
   /**
-   * Create a new Lead with optional auto-assignment for Agents
+   * Create a new Lead with optional auto-assignment for Agents and triggers matching scan
    */
   async create(user: any, dto: CreateLeadDto) {
     if (dto.budgetMin > dto.budgetMax) {
@@ -49,6 +58,9 @@ export class LeadsService {
         },
       },
     });
+
+    // Auto-trigger matching engine re-scan
+    await this.matchesService.generateMatchesForLead(lead.id);
 
     return lead;
   }
@@ -154,7 +166,7 @@ export class LeadsService {
   }
 
   /**
-   * Update lead
+   * Update lead and trigger matching re-scan
    */
   async update(id: string, dto: UpdateLeadDto, user?: any) {
     const existing = await this.findOne(id, user);
@@ -170,7 +182,7 @@ export class LeadsService {
       data.email = dto.email.toLowerCase();
     }
 
-    return this.prisma.lead.update({
+    const updated = await this.prisma.lead.update({
       where: { id },
       data,
       include: {
@@ -179,6 +191,11 @@ export class LeadsService {
         },
       },
     });
+
+    // Re-scan matching engine
+    await this.matchesService.generateMatchesForLead(id);
+
+    return updated;
   }
 
   /**
@@ -229,7 +246,7 @@ export class LeadsService {
       throw new BadRequestException('Lead is not deleted.');
     }
 
-    return this.prisma.lead.update({
+    const restored = await this.prisma.lead.update({
       where: { id },
       data: { deletedAt: null },
       include: {
@@ -238,5 +255,10 @@ export class LeadsService {
         },
       },
     });
+
+    // Re-calculate matches for restored lead
+    await this.matchesService.generateMatchesForLead(id);
+
+    return restored;
   }
 }

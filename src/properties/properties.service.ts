@@ -1,6 +1,13 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  Inject,
+  forwardRef,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../settings/settings.service';
+import { MatchesService } from '../matches/matches.service';
 import { CreatePropertyDto } from './dto/create-property.dto';
 import { UpdatePropertyDto } from './dto/update-property.dto';
 import { PropertyFilterDto } from './dto/property-filter.dto';
@@ -11,10 +18,12 @@ export class PropertiesService {
   constructor(
     private prisma: PrismaService,
     private settingsService: SettingsService,
+    @Inject(forwardRef(() => MatchesService))
+    private matchesService: MatchesService,
   ) {}
 
   /**
-   * Create a new Property with optional auto-assignment for Agents
+   * Create a new Property with optional auto-assignment for Agents and trigger matching scan
    */
   async create(user: any, dto: CreatePropertyDto) {
     let assignedAgentId = dto.assignedAgentId;
@@ -43,6 +52,9 @@ export class PropertiesService {
         },
       },
     });
+
+    // Auto-trigger matching engine re-scan
+    await this.matchesService.generateMatchesForProperty(property.id);
 
     return property;
   }
@@ -148,12 +160,12 @@ export class PropertiesService {
   }
 
   /**
-   * Update property
+   * Update property and trigger matching re-scan
    */
   async update(id: string, dto: UpdatePropertyDto, user?: any) {
     await this.findOne(id, user);
 
-    return this.prisma.property.update({
+    const updated = await this.prisma.property.update({
       where: { id },
       data: dto,
       include: {
@@ -162,6 +174,11 @@ export class PropertiesService {
         },
       },
     });
+
+    // Re-scan matching engine
+    await this.matchesService.generateMatchesForProperty(id);
+
+    return updated;
   }
 
   /**
@@ -212,7 +229,7 @@ export class PropertiesService {
       throw new BadRequestException('Property is not deleted.');
     }
 
-    return this.prisma.property.update({
+    const restored = await this.prisma.property.update({
       where: { id },
       data: { deletedAt: null },
       include: {
@@ -221,5 +238,10 @@ export class PropertiesService {
         },
       },
     });
+
+    // Re-scan matching engine for restored property
+    await this.matchesService.generateMatchesForProperty(id);
+
+    return restored;
   }
 }

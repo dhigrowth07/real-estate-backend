@@ -112,6 +112,7 @@ enum InteractionType {
 model AgencySetting {
   id                  String              @id @default("default")
   agentVisibilityMode AgentVisibilityMode @default(ALL)
+  matchingWeights     Json?               // Configurable weights for matching engine
   updatedAt           DateTime            @updatedAt
 
   @@map("agency_settings")
