@@ -114,6 +114,16 @@ export class LeadsService {
         assignedAgent: {
           select: { id: true, name: true, email: true, role: true },
         },
+        matches: {
+          select: { id: true, score: true, propertyId: true, status: true },
+          orderBy: { score: 'desc' },
+          take: 5,
+        },
+        interactions: {
+          select: { id: true, channel: true, type: true, timestamp: true, notes: true, createdAt: true },
+          orderBy: { timestamp: 'desc' },
+          take: 1,
+        },
         _count: {
           select: { matches: true, interactions: true },
         },
