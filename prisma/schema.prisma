@@ -162,32 +162,41 @@ model User {
 
 /// Represents buyer / tenant / investor inquiries & criteria
 model Lead {
-  id                 String         @id @default(uuid())
-  name               String
-  phone              String
-  email              String?
-  source             LeadSource     @default(WEBSITE)
-  budgetMin          Float
-  budgetMax          Float
-  preferredLocations String[]
-  propertyType       PropertyType   @default(APARTMENT)
-  bhk                String?
-  purpose            LeadPurpose    @default(BUY)
-  urgency            LeadUrgency    @default(IMMEDIATE)
-  stage              LeadStage      @default(NEW)
-  assignedAgentId    String?
-  assignedAgent      User?          @relation("AssignedAgent", fields: [assignedAgentId], references: [id], onDelete: SetNull)
-  matches            Match[]
-  interactions       Interaction[]
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
-  deletedAt          DateTime?      // Soft delete timestamp
+  id                    String         @id @default(uuid())
+  name                  String
+  phone                 String
+  email                 String?
+  source                LeadSource     @default(WEBSITE)
+  sources               String[]       @default([]) // Multi-attribution tracking (e.g. WEBSITE, INSTAGRAM_COMMENT)
+  budgetMin             Float
+  budgetMax             Float
+  preferredLocations    String[]
+  propertyType          PropertyType   @default(APARTMENT)
+  bhk                   String?
+  purpose               LeadPurpose    @default(BUY)
+  urgency               LeadUrgency    @default(IMMEDIATE)
+  stage                 LeadStage      @default(NEW)
+  assignedAgentId       String?
+  assignedAgent         User?          @relation("AssignedAgent", fields: [assignedAgentId], references: [id], onDelete: SetNull)
+  instagramUserId       String?        @unique // Instagram Scoped User ID (IGSID) for DMs/Comments attribution
+  whatsappOptIn         Boolean        @default(false) // Verified WhatsApp opt-in consent status
+  whatsappOptInEvidence String?        // Message / timestamp text establishing consent
+  interestedPropertyId  String?        // Specific property user showed interest in
+  interestedProperty    Property?      @relation("InterestedLeads", fields: [interestedPropertyId], references: [id], onDelete: SetNull)
+  matches               Match[]
+  interactions          Interaction[]
+  conversations         Conversation[]
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  deletedAt             DateTime?      // Soft delete timestamp
 
   @@index([stage])
   @@index([source])
   @@index([urgency])
   @@index([propertyType])
   @@index([assignedAgentId])
+  @@index([instagramUserId])
+  @@index([interestedPropertyId])
   @@index([createdAt])
   @@index([deletedAt])
   @@map("leads")
@@ -195,24 +204,27 @@ model Lead {
 
 /// Represents real estate inventory and property specifications
 model Property {
-  id               String           @id @default(uuid())
+  id               String                @id @default(uuid())
   title            String
   location         String
   price            Float
-  propertyType     PropertyType     @default(APARTMENT)
+  propertyType     PropertyType          @default(APARTMENT)
   bhk              String?
   sqft             Float?
-  possessionStatus PossessionStatus @default(READY_TO_MOVE)
+  possessionStatus PossessionStatus      @default(READY_TO_MOVE)
   amenities        String[]
   ownerContact     String
   images           String[]
-  status           PropertyStatus   @default(AVAILABLE)
+  status           PropertyStatus        @default(AVAILABLE)
   assignedAgentId  String?
-  assignedAgent    User?            @relation("AssignedPropertyAgent", fields: [assignedAgentId], references: [id], onDelete: SetNull)
+  assignedAgent    User?                 @relation("AssignedPropertyAgent", fields: [assignedAgentId], references: [id], onDelete: SetNull)
   matches          Match[]
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
-  deletedAt        DateTime?        // Soft delete timestamp
+  interestedLeads  Lead[]                @relation("InterestedLeads")
+  postMappings     PostPropertyMapping[]
+  pendingInterests PendingInterest[]
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  deletedAt        DateTime?             // Soft delete timestamp
 
   @@index([status])
   @@index([propertyType])
@@ -290,6 +302,103 @@ model Interaction {
 }
 
 // ------------------------------------------------------------------------------
+// PHASE 2: CONVERSATION & MESSAGING MODELS
+// ------------------------------------------------------------------------------
+
+enum ChannelType {
+  WHATSAPP
+  INSTAGRAM
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageType {
+  TEXT
+  TEMPLATE
+  AUTO_REPLY
+}
+
+enum MessageStatus {
+  RECEIVED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+/// Tracks two-way chat sessions across WhatsApp and Instagram
+model Conversation {
+  id              String       @id @default(uuid())
+  leadId          String?
+  lead            Lead?        @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  channel         ChannelType  // WHATSAPP or INSTAGRAM
+  externalId      String       // Phone number for WhatsApp or IGSID for Instagram
+  windowOpenUntil DateTime?    // 24-hour Meta messaging customer care session window
+  messages        Message[]
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@unique([channel, externalId])
+  @@index([leadId])
+  @@index([channel])
+  @@index([externalId])
+  @@index([windowOpenUntil])
+  @@map("conversations")
+}
+
+/// Stores individual chat messages with deduplication & delivery tracking
+model Message {
+  id                String           @id @default(uuid())
+  conversationId    String
+  conversation      Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  direction         MessageDirection // INBOUND or OUTBOUND
+  rawText           String           // Raw text content of the message
+  messageType       MessageType      @default(TEXT) // TEXT, TEMPLATE, AUTO_REPLY
+  externalMessageId String?          @unique // Meta message ID (wamid / mid) for deduplication
+  status            MessageStatus    @default(RECEIVED) // RECEIVED, SENT, DELIVERED, READ, FAILED
+  createdAt         DateTime         @default(now())
+
+  @@index([conversationId])
+  @@index([direction])
+  @@index([status])
+  @@index([createdAt])
+  @@map("messages")
+}
+
+/// Maps an Instagram Post, Reel, or Ad to a specific real estate property in the catalog
+model PostPropertyMapping {
+  id               String   @id @default(uuid())
+  instagramMediaId String   @unique // Meta Instagram Media ID (post or reel)
+  propertyId       String
+  property         Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  createdAt        DateTime @default(now())
+
+  @@index([instagramMediaId])
+  @@index([propertyId])
+  @@map("post_property_mappings")
+}
+
+/// Short-lived record linking an Instagram comment inquiry to a subsequent DM interaction
+model PendingInterest {
+  id              String   @id @default(uuid())
+  instagramUserId String   // IGSID of the user who commented
+  propertyId      String
+  property        Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  commentText     String   // Content of the user's comment
+  commentedAt     DateTime @default(now())
+  resolved        Boolean  @default(false) // True once answered/converted in DM
+  createdAt       DateTime @default(now())
+
+  @@index([instagramUserId])
+  @@index([propertyId])
+  @@index([resolved])
+  @@map("pending_interests")
+}
+
+// ------------------------------------------------------------------------------
 // WEBHOOK MODELS & ENUMS
 // ------------------------------------------------------------------------------
 
@@ -323,4 +432,5 @@ model WebhookLog {
   @@index([createdAt])
   @@map("webhook_logs")
 }
+
 

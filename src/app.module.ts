@@ -12,6 +12,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { InteractionsModule } from './interactions/interactions.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
+import { PostMappingsModule } from './post-mappings/post-mappings.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     DashboardModule,
     InteractionsModule,
     WebhooksModule,
+    PostMappingsModule,
   ],
 })
 export class AppModule {}
