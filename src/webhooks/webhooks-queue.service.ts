@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { WebhooksService } from './webhooks.service';
 import { WebhookPlatform, WebhookStatus } from '@prisma/client';
 import { InstagramCommentsHandler } from './handlers/instagram-comments.handler';
+import { InstagramMessagesHandler } from './handlers/instagram-messages.handler';
 
 export interface WebhookJobData {
   logId: string;
@@ -17,6 +18,7 @@ export class WebhooksQueueService {
   constructor(
     private readonly webhooksService: WebhooksService,
     private readonly instagramCommentsHandler: InstagramCommentsHandler,
+    private readonly instagramMessagesHandler: InstagramMessagesHandler,
   ) {}
 
   /**
@@ -125,6 +127,8 @@ export class WebhooksQueueService {
               `[Instagram DM] Postback received from ${senderId}: "${messagingEvent.postback.payload}"`,
             );
           }
+
+          await this.instagramMessagesHandler.handleInboundDm(messagingEvent);
         }
       }
 

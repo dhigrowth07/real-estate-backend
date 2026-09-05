@@ -31,6 +31,8 @@ enum LeadSource {
   DIRECT_CALL
   PORTAL
   WALK_IN
+  INSTAGRAM
+  WHATSAPP
   OTHER
 }
 
@@ -48,6 +50,7 @@ enum LeadUrgency {
 }
 
 enum LeadStage {
+  UNQUALIFIED
   NEW
   CONTACTED
   REQUIREMENT_GATHERED
@@ -164,13 +167,13 @@ model User {
 model Lead {
   id                    String         @id @default(uuid())
   name                  String
-  phone                 String
+  phone                 String         @default("")
   email                 String?
   source                LeadSource     @default(WEBSITE)
   sources               String[]       @default([]) // Multi-attribution tracking (e.g. WEBSITE, INSTAGRAM_COMMENT)
-  budgetMin             Float
-  budgetMax             Float
-  preferredLocations    String[]
+  budgetMin             Float          @default(0)
+  budgetMax             Float          @default(0)
+  preferredLocations    String[]       @default([])
   propertyType          PropertyType   @default(APARTMENT)
   bhk                   String?
   purpose               LeadPurpose    @default(BUY)
