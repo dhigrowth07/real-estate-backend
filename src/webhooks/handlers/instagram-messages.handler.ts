@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PhoneExtractionService } from '../../common/phone/phone-extraction.service';
+import { MergeLeadsService } from '../../leads/merge-leads.service';
 import {
   ChannelType,
   LeadSource,
@@ -36,6 +37,7 @@ export interface InstagramDmProcessResult {
   phone?: string;
   interestedPropertyId?: string;
   whatsappDeliveryEligible: boolean;
+  merged?: boolean;
 }
 
 @Injectable()
@@ -45,6 +47,7 @@ export class InstagramMessagesHandler {
   constructor(
     private readonly prisma: PrismaService,
     private readonly phoneExtractionService: PhoneExtractionService,
+    private readonly mergeLeadsService: MergeLeadsService,
   ) {}
 
   /**
@@ -227,6 +230,19 @@ export class InstagramMessagesHandler {
       this.logger.log(
         `[Instagram Inbound DM] Upgraded Lead "${lead.id}" to stage "NEW", WhatsApp Opt-In verified, Property: "${interestedPropertyId || 'None'}".`,
       );
+
+      // Check if duplicate lead exists with the same phone and merge
+      const mergeResult = await this.mergeLeadsService.mergeLeadByPhone(
+        lead.id,
+        formattedPhone,
+      );
+      if (mergeResult.merged) {
+        lead = mergeResult.primaryLead;
+        interestedPropertyId = lead.interestedPropertyId || undefined;
+        this.logger.log(
+          `[Instagram Inbound DM] Cross-channel lead merge completed. Primary Lead ID is now "${lead.id}".`,
+        );
+      }
 
       if (confirmationDmNeeded) {
         // Record automated confirmation text message for the agent/system log

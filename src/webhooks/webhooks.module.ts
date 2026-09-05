@@ -10,9 +10,10 @@ import { InstagramMessagesHandler } from './handlers/instagram-messages.handler'
 import { WhatsAppMessagesHandler } from './handlers/whatsapp-messages.handler';
 import { PhoneModule } from '../common/phone/phone.module';
 import { MatchesModule } from '../matches/matches.module';
+import { LeadsModule } from '../leads/leads.module';
 
 @Module({
-  imports: [PrismaModule, ConfigModule, PhoneModule, MatchesModule],
+  imports: [PrismaModule, ConfigModule, PhoneModule, MatchesModule, LeadsModule],
   controllers: [WebhooksController],
   providers: [
     WebhooksService,

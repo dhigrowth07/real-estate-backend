@@ -2,12 +2,14 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { InstagramMessagesHandler } from './instagram-messages.handler';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PhoneExtractionService } from '../../common/phone/phone-extraction.service';
+import { MergeLeadsService } from '../../leads/merge-leads.service';
 import { LeadStage, ChannelType, LeadSource } from '@prisma/client';
 
 describe('InstagramMessagesHandler', () => {
   let handler: InstagramMessagesHandler;
   let prisma: PrismaService;
   let phoneService: PhoneExtractionService;
+  let mergeLeadsService: MergeLeadsService;
 
   const mockPrisma = {
     message: {
@@ -40,6 +42,15 @@ describe('InstagramMessagesHandler', () => {
     extractPhoneNumber: jest.fn(),
   };
 
+  const mockMergeLeadsService = {
+    mergeLeadByPhone: jest.fn().mockImplementation((leadId, phone) => {
+      return Promise.resolve({
+        primaryLead: { id: leadId, phone },
+        merged: false,
+      });
+    }),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
     const module: TestingModule = await Test.createTestingModule({
@@ -47,12 +58,14 @@ describe('InstagramMessagesHandler', () => {
         InstagramMessagesHandler,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: PhoneExtractionService, useValue: mockPhoneService },
+        { provide: MergeLeadsService, useValue: mockMergeLeadsService },
       ],
     }).compile();
 
     handler = module.get<InstagramMessagesHandler>(InstagramMessagesHandler);
     prisma = module.get<PrismaService>(PrismaService);
     phoneService = module.get<PhoneExtractionService>(PhoneExtractionService);
+    mergeLeadsService = module.get<MergeLeadsService>(MergeLeadsService);
   });
 
   it('should skip duplicate messages by externalMessageId', async () => {
