@@ -62,7 +62,50 @@ export class MatchesService {
   }
 
   /**
-   * Evaluates compatibility and persists matches for a specific lead against all available properties
+  /**
+   * Creates or updates an explicit high-confidence match (score=100)
+   * for direct listing inquiries
+   */
+  async createExplicitMatch(leadId: string, propertyId: string) {
+    const breakdown = {
+      isExplicit: true,
+      explicitReason: 'Direct inquiry on property listing',
+      budget: 35,
+      location: 25,
+      propertyType: 20,
+      bhk: 10,
+      possession: 10,
+    };
+
+    const match = await this.prisma.match.upsert({
+      where: {
+        leadId_propertyId: {
+          leadId,
+          propertyId,
+        },
+      },
+      create: {
+        leadId,
+        propertyId,
+        score: 100,
+        isExplicit: true,
+        breakdown,
+      },
+      update: {
+        score: 100,
+        isExplicit: true,
+        breakdown,
+      },
+    });
+
+    await this.notificationsService.handleMatchAlert(match.id);
+    return match;
+  }
+
+  /**
+   * Evaluates compatibility and persists matches for a specific lead against all available properties.
+   * If the lead has an interestedPropertyId set, that match receives score = 100 and isExplicit = true,
+   * while all other properties are still scored normally by the matching engine.
    */
   async generateMatchesForLead(leadId: string) {
     const lead = await this.prisma.lead.findFirst({
@@ -81,7 +124,19 @@ export class MatchesService {
     const results = [];
 
     for (const property of properties) {
+      const isDirectInterest = lead.interestedPropertyId === property.id;
       const evaluation = this.matchingEngine.calculateScore(lead, property, weights);
+      const finalScore = isDirectInterest ? 100 : evaluation.score;
+      const finalBreakdown = isDirectInterest
+        ? {
+            ...evaluation.breakdown,
+            isExplicit: true,
+            explicitReason: 'Direct inquiry on property listing',
+          }
+        : {
+            ...evaluation.breakdown,
+            isExplicit: false,
+          };
 
       const match = await this.prisma.match.upsert({
         where: {
@@ -93,12 +148,14 @@ export class MatchesService {
         create: {
           leadId: lead.id,
           propertyId: property.id,
-          score: evaluation.score,
-          breakdown: evaluation.breakdown,
+          score: finalScore,
+          isExplicit: isDirectInterest,
+          breakdown: finalBreakdown,
         },
         update: {
-          score: evaluation.score,
-          breakdown: evaluation.breakdown,
+          score: finalScore,
+          isExplicit: isDirectInterest,
+          breakdown: finalBreakdown,
         },
       });
 
@@ -112,7 +169,8 @@ export class MatchesService {
   }
 
   /**
-   * Evaluates compatibility and persists matches for a specific property against all active leads
+   * Evaluates compatibility and persists matches for a specific property against all active leads.
+   * Preserves explicit matches for leads that directly inquired on this property.
    */
   async generateMatchesForProperty(propertyId: string) {
     const property = await this.prisma.property.findFirst({
@@ -131,7 +189,19 @@ export class MatchesService {
     const results = [];
 
     for (const lead of leads) {
+      const isDirectInterest = lead.interestedPropertyId === property.id;
       const evaluation = this.matchingEngine.calculateScore(lead, property, weights);
+      const finalScore = isDirectInterest ? 100 : evaluation.score;
+      const finalBreakdown = isDirectInterest
+        ? {
+            ...evaluation.breakdown,
+            isExplicit: true,
+            explicitReason: 'Direct inquiry on property listing',
+          }
+        : {
+            ...evaluation.breakdown,
+            isExplicit: false,
+          };
 
       const match = await this.prisma.match.upsert({
         where: {
@@ -143,12 +213,14 @@ export class MatchesService {
         create: {
           leadId: lead.id,
           propertyId: property.id,
-          score: evaluation.score,
-          breakdown: evaluation.breakdown,
+          score: finalScore,
+          isExplicit: isDirectInterest,
+          breakdown: finalBreakdown,
         },
         update: {
-          score: evaluation.score,
-          breakdown: evaluation.breakdown,
+          score: finalScore,
+          isExplicit: isDirectInterest,
+          breakdown: finalBreakdown,
         },
       });
 

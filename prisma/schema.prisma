@@ -249,7 +249,8 @@ model Match {
   property      Property       @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   score         Float          // Compatibility score 0 - 100
   status        MatchStatus    @default(NEW)
-  breakdown     Json?          // Sub-score breakdown (budget, location, type, bhk, possession)
+  isExplicit    Boolean        @default(false) // Direct explicit customer inquiry (score=100)
+  breakdown     Json?          // Sub-score breakdown (budget, location, type, bhk, possession, isExplicit)
   notifications Notification[]
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
@@ -259,6 +260,7 @@ model Match {
   @@index([propertyId])
   @@index([status])
   @@index([score])
+  @@index([isExplicit])
   @@map("matches")
 }
 

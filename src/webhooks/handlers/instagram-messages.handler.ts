@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { PhoneExtractionService } from '../../common/phone/phone-extraction.service';
 import { MergeLeadsService } from '../../leads/merge-leads.service';
 import { WhatsAppTemplateService } from '../../whatsapp/whatsapp-template.service';
+import { MatchesService } from '../../matches/matches.service';
 import {
   ChannelType,
   LeadSource,
@@ -57,6 +58,7 @@ export class InstagramMessagesHandler {
     private readonly phoneExtractionService: PhoneExtractionService,
     private readonly mergeLeadsService: MergeLeadsService,
     private readonly whatsAppTemplateService: WhatsAppTemplateService,
+    private readonly matchesService: MatchesService,
   ) {}
 
   /**
@@ -257,6 +259,32 @@ export class InstagramMessagesHandler {
         // Record automated confirmation text message for the agent/system log
         this.logger.log(
           `[Instagram Confirmation DM] Template prompt: "Just to confirm, you're asking about our ${confirmationPropertyName}, right?"`,
+        );
+      }
+
+      // STAGE P2-11: Explicit High-Confidence Match Creation & Additive Scoring
+      if (lead.interestedPropertyId) {
+        try {
+          await this.matchesService.createExplicitMatch(
+            lead.id,
+            lead.interestedPropertyId,
+          );
+          this.logger.log(
+            `[Stage P2-11 Explicit Match] Created explicit 100% Match for Lead "${lead.id}" and Property "${lead.interestedPropertyId}".`,
+          );
+        } catch (err: any) {
+          this.logger.error(
+            `[Stage P2-11 Explicit Match] Error creating explicit match for Lead "${lead.id}": ${err.message}`,
+          );
+        }
+      }
+
+      // Score this lead normally against all other properties
+      try {
+        await this.matchesService.generateMatchesForLead(lead.id);
+      } catch (err: any) {
+        this.logger.error(
+          `[Instagram Inbound DM] Error running matching engine for Lead "${lead.id}": ${err.message}`,
         );
       }
     } else {
