@@ -288,3 +288,39 @@ model Interaction {
   @@index([timestamp])
   @@map("interactions")
 }
+
+// ------------------------------------------------------------------------------
+// WEBHOOK MODELS & ENUMS
+// ------------------------------------------------------------------------------
+
+enum WebhookPlatform {
+  WHATSAPP
+  INSTAGRAM
+}
+
+enum WebhookStatus {
+  RECEIVED
+  PROCESSING
+  PROCESSED
+  FAILED
+}
+
+/// Stores raw incoming webhook payloads for auditing, replay, and zero data loss
+model WebhookLog {
+  id          String          @id @default(uuid())
+  platform    WebhookPlatform
+  eventType   String?         // e.g. "messages", "comments", "statuses", "messaging_postbacks"
+  rawPayload  Json            // Unaltered raw payload from Meta
+  headers     Json?           // Request headers (including X-Hub-Signature-256)
+  status      WebhookStatus   @default(RECEIVED)
+  error       String?
+  processedAt DateTime?
+  createdAt   DateTime        @default(now())
+
+  @@index([platform])
+  @@index([eventType])
+  @@index([status])
+  @@index([createdAt])
+  @@map("webhook_logs")
+}
+

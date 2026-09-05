@@ -11,6 +11,7 @@ import { MatchesModule } from './matches/matches.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { InteractionsModule } from './interactions/interactions.module';
+import { WebhooksModule } from './webhooks/webhooks.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { InteractionsModule } from './interactions/interactions.module';
     NotificationsModule,
     DashboardModule,
     InteractionsModule,
+    WebhooksModule,
   ],
 })
 export class AppModule {}
