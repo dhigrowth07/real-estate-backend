@@ -10,6 +10,10 @@ import {
   MessageDirection,
   MessageStatus,
   MessageType,
+  NotificationType,
+  InteractionChannel,
+  InteractionType,
+  UserRole,
   Lead,
 } from '@prisma/client';
 
@@ -38,6 +42,9 @@ export interface InstagramDmProcessResult {
   phone?: string;
   interestedPropertyId?: string;
   whatsappDeliveryEligible: boolean;
+  whatsappDelivered: boolean;
+  whatsappDeliveryError?: string;
+  manualFollowUpFlagged: boolean;
   merged?: boolean;
 }
 
@@ -258,22 +265,49 @@ export class InstagramMessagesHandler {
       );
     }
 
-    // 5. Check eligibility for Stage P2-9 Outbound WhatsApp Delivery
-    // Eligible ONLY when all three conditions are true:
-    // a. phone number present
-    // b. whatsappOptIn = true
-    // c. interestedPropertyId is set
+    // =========================================================================
+    // STEP 5: AUTOMATIC TRIGGER — OUTBOUND WHATSAPP PROPERTY BROCHURE
+    // =========================================================================
+    // Trigger WhatsAppTemplateService.sendPropertyDetailsTemplate(leadId)
+    // immediately when all three conditions are satisfied in this processing run:
+    // 1. Phone number is confirmed (lead.phone)
+    // 2. WhatsApp opt-in consent verified (lead.whatsappOptIn === true)
+    // 3. Interested property is identified (lead.interestedPropertyId)
+    // =========================================================================
+    let whatsappDelivered = false;
+    let manualFollowUpFlagged = false;
+    let whatsappDeliveryError: string | undefined;
+
     const isEligibleForWhatsAppDelivery = Boolean(
       lead.phone &&
+      lead.phone.trim().length > 5 &&
       lead.whatsappOptIn &&
       lead.interestedPropertyId,
     );
 
     if (isEligibleForWhatsAppDelivery) {
       this.logger.log(
-        `[Instagram Inbound DM] Lead "${lead.id}" is ELIGIBLE for Stage P2-9 Outbound WhatsApp delivery (Phone: ${lead.phone}, Property: ${lead.interestedPropertyId}).`,
+        `[Stage P2-10 Automatic Trigger] All 3 criteria met for Lead "${lead.id}" (Phone: ${lead.phone}, Property: ${lead.interestedPropertyId}). Dispatching WhatsApp brochure template...`,
       );
-      this.triggerOutboundWhatsAppDeliveryHook(lead.id, lead.phone, lead.interestedPropertyId!);
+
+      try {
+        await this.whatsAppTemplateService.sendPropertyDetailsTemplate(lead.id);
+        whatsappDelivered = true;
+        this.logger.log(
+          `[Stage P2-10 Automatic Trigger] Successfully sent WhatsApp property details template to Lead "${lead.id}" (${lead.phone}).`,
+        );
+      } catch (err: any) {
+        const errorMsg = err.message || 'WhatsApp template delivery failed';
+        whatsappDeliveryError = errorMsg;
+        manualFollowUpFlagged = true;
+
+        this.logger.error(
+          `[Stage P2-10 Automatic Trigger ERROR] Failed to send WhatsApp brochure to Lead "${lead.id}" (${lead.phone}): ${errorMsg}`,
+        );
+
+        // Flag the Lead for manual agent follow-up rather than failing silently
+        await this.flagLeadForManualFollowUp(lead, errorMsg);
+      }
     }
 
     return {
@@ -284,25 +318,61 @@ export class InstagramMessagesHandler {
       phone: lead.phone || undefined,
       interestedPropertyId,
       whatsappDeliveryEligible: isEligibleForWhatsAppDelivery,
+      whatsappDelivered,
+      whatsappDeliveryError,
+      manualFollowUpFlagged,
     };
   }
 
   /**
-   * Hook for Stage P2-9 Outbound WhatsApp Catalog Delivery
+   * Flags a lead for manual agent follow-up when automatic template delivery fails.
+   * Creates an internal Notification and logs an Interaction note.
    */
-  private async triggerOutboundWhatsAppDeliveryHook(
-    leadId: string,
-    phone: string,
-    propertyId: string,
-  ): Promise<void> {
-    this.logger.log(
-      `[Stage P2-9 Trigger Hook] Initiating automated WhatsApp property brochure delivery to ${phone} for Lead ${leadId} (Property: ${propertyId})`,
-    );
+  private async flagLeadForManualFollowUp(lead: Lead, errorReason: string): Promise<void> {
     try {
-      await this.whatsAppTemplateService.sendPropertyDetailsTemplate(leadId);
+      // Find assigned agent, or fallback to first Admin
+      let targetUserId: string | null | undefined = lead.assignedAgentId;
+      if (!targetUserId) {
+        const adminUser = await this.prisma.user.findFirst({
+          where: { role: UserRole.ADMIN },
+        });
+        targetUserId = adminUser ? adminUser.id : null;
+      }
+
+      if (targetUserId) {
+        // 1. Create a high-priority system notification for the agent/admin
+        await this.prisma.notification.create({
+          data: {
+            userId: targetUserId,
+            type: NotificationType.SYSTEM,
+            title: 'Action Needed: WhatsApp Brochure Failed',
+            message: `Automatic WhatsApp brochure delivery failed for ${lead.name} (${lead.phone}): ${errorReason}. Please contact this lead manually.`,
+            metadata: {
+              leadId: lead.id,
+              propertyId: lead.interestedPropertyId,
+              error: errorReason,
+            },
+          },
+        });
+
+        // 2. Log an Interaction note on the lead record
+        await this.prisma.interaction.create({
+          data: {
+            leadId: lead.id,
+            agentId: targetUserId,
+            channel: InteractionChannel.NOTE,
+            type: InteractionType.FOLLOW_UP,
+            notes: `⚠️ Automated WhatsApp property details delivery failed: "${errorReason}". Flagged for manual agent follow-up.`,
+          },
+        });
+
+        this.logger.log(
+          `[Stage P2-10 Manual Follow-Up] Flagged Lead "${lead.id}" for User "${targetUserId}". Created System Notification and Interaction note.`,
+        );
+      }
     } catch (err: any) {
       this.logger.error(
-        `[Stage P2-9 Outbound Delivery] Failed to send property details template to Lead ${leadId}: ${err.message}`,
+        `[Stage P2-10 Manual Follow-Up] Error creating follow-up notification for Lead "${lead.id}": ${err.message}`,
       );
     }
   }

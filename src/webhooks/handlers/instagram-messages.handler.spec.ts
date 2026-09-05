@@ -38,6 +38,19 @@ describe('InstagramMessagesHandler', () => {
       findMany: jest.fn(),
       updateMany: jest.fn(),
     },
+    user: {
+      findFirst: jest.fn().mockResolvedValue({ id: 'admin-1', role: 'ADMIN' }),
+    },
+    notification: {
+      create: jest.fn().mockImplementation((args) =>
+        Promise.resolve({ id: 'notif-1', ...args.data }),
+      ),
+    },
+    interaction: {
+      create: jest.fn().mockImplementation((args) =>
+        Promise.resolve({ id: 'inter-1', ...args.data }),
+      ),
+    },
   };
 
   const mockPhoneService = {
@@ -59,6 +72,12 @@ describe('InstagramMessagesHandler', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+
+    mockPrisma.lead.update.mockImplementation((args) =>
+      Promise.resolve({ id: args.where.id, ...args.data }),
+    );
+    mockWhatsAppTemplateService.sendPropertyDetailsTemplate.mockResolvedValue({ success: true });
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         InstagramMessagesHandler,
@@ -165,15 +184,95 @@ describe('InstagramMessagesHandler', () => {
       data: { resolved: true },
     });
 
-    // 3. Check WhatsApp delivery eligibility (phone present, opt-in true, property set)
+    // 3. Check WhatsApp delivery eligibility and automatic trigger execution
     expect(result).toEqual(
       expect.objectContaining({
         phoneExtracted: true,
         phone: '+919876543210',
         interestedPropertyId: 'prop-villa-99',
         whatsappDeliveryEligible: true,
+        whatsappDelivered: true,
+        manualFollowUpFlagged: false,
       }),
     );
+
+    expect(mockWhatsAppTemplateService.sendPropertyDetailsTemplate).toHaveBeenCalledWith(
+      'existing-lead-1',
+    );
+  });
+
+  it('should automatically flag lead for manual follow-up if template send fails (Stage P2-10)', async () => {
+    mockPrisma.message.findUnique.mockResolvedValue(null);
+    mockPrisma.lead.findUnique.mockResolvedValue({
+      id: 'lead-fail-1',
+      name: 'Rohan Sharma',
+      instagramUserId: 'ig_user_fail',
+      stage: LeadStage.UNQUALIFIED,
+      sources: ['Instagram'],
+      assignedAgentId: 'agent-123',
+    });
+
+    mockPrisma.lead.update.mockResolvedValue({
+      id: 'lead-fail-1',
+      name: 'Rohan Sharma',
+      phone: '+919876543210',
+      whatsappOptIn: true,
+      interestedPropertyId: 'prop-villa-99',
+      stage: LeadStage.NEW,
+      assignedAgentId: 'agent-123',
+    });
+
+    mockPhoneService.extractPhoneNumber.mockReturnValue({
+      found: true,
+      e164: '+919876543210',
+      confidence: 'HIGH',
+    });
+
+    mockPrisma.pendingInterest.findMany.mockResolvedValue([
+      {
+        id: 'pending-1',
+        propertyId: 'prop-villa-99',
+        property: { id: 'prop-villa-99', title: 'Grand Palm Villa' },
+        createdAt: new Date(),
+      },
+    ]);
+
+    // Simulate Meta API / template send failure
+    mockWhatsAppTemplateService.sendPropertyDetailsTemplate.mockRejectedValue(
+      new Error('Meta Cloud API Token expired (Error 190)'),
+    );
+
+    const result = await handler.handleInboundDm({
+      sender: { id: 'ig_user_fail' },
+      message: { mid: 'mid.fail_test', text: 'My number is 9876543210' },
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        phoneExtracted: true,
+        whatsappDeliveryEligible: true,
+        whatsappDelivered: false,
+        manualFollowUpFlagged: true,
+        whatsappDeliveryError: expect.stringContaining('Meta Cloud API Token expired'),
+      }),
+    );
+
+    // Verify Notification and Interaction created for assigned agent
+    expect(mockPrisma.notification.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        userId: 'agent-123',
+        title: 'Action Needed: WhatsApp Brochure Failed',
+        message: expect.stringContaining('Rohan Sharma'),
+      }),
+    });
+
+    expect(mockPrisma.interaction.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        leadId: 'lead-fail-1',
+        agentId: 'agent-123',
+        notes: expect.stringContaining('Meta Cloud API Token expired'),
+      }),
+    });
   });
 
   it('should handle multiple unresolved PendingInterests by selecting the most recent without guessing', async () => {
