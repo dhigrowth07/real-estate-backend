@@ -3,6 +3,7 @@ import { WebhooksService } from './webhooks.service';
 import { WebhookPlatform, WebhookStatus } from '@prisma/client';
 import { InstagramCommentsHandler } from './handlers/instagram-comments.handler';
 import { InstagramMessagesHandler } from './handlers/instagram-messages.handler';
+import { WhatsAppMessagesHandler } from './handlers/whatsapp-messages.handler';
 
 export interface WebhookJobData {
   logId: string;
@@ -19,6 +20,7 @@ export class WebhooksQueueService {
     private readonly webhooksService: WebhooksService,
     private readonly instagramCommentsHandler: InstagramCommentsHandler,
     private readonly instagramMessagesHandler: InstagramMessagesHandler,
+    private readonly whatsAppMessagesHandler: WhatsAppMessagesHandler,
   ) {}
 
   /**
@@ -88,7 +90,7 @@ export class WebhooksQueueService {
             this.logger.log(
               `[WhatsApp] Received message from ${msg.from} (Type: ${msg.type}, ID: ${msg.id})`,
             );
-            // Extensible handler for lead capture / conversation bot in subsequent stages
+            await this.whatsAppMessagesHandler.handleInboundMessage(msg, value.contacts);
           }
         }
 

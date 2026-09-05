@@ -7,22 +7,26 @@ import { ConfigModule } from '@nestjs/config';
 
 import { InstagramCommentsHandler } from './handlers/instagram-comments.handler';
 import { InstagramMessagesHandler } from './handlers/instagram-messages.handler';
+import { WhatsAppMessagesHandler } from './handlers/whatsapp-messages.handler';
 import { PhoneModule } from '../common/phone/phone.module';
+import { MatchesModule } from '../matches/matches.module';
 
 @Module({
-  imports: [PrismaModule, ConfigModule, PhoneModule],
+  imports: [PrismaModule, ConfigModule, PhoneModule, MatchesModule],
   controllers: [WebhooksController],
   providers: [
     WebhooksService,
     WebhooksQueueService,
     InstagramCommentsHandler,
     InstagramMessagesHandler,
+    WhatsAppMessagesHandler,
   ],
   exports: [
     WebhooksService,
     WebhooksQueueService,
     InstagramCommentsHandler,
     InstagramMessagesHandler,
+    WhatsAppMessagesHandler,
   ],
 })
 export class WebhooksModule {}
