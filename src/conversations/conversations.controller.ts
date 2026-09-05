@@ -23,8 +23,9 @@ export class ConversationsController {
   findAll(
     @Query('channel') channel?: ChannelType,
     @Query('search') search?: string,
+    @Query('leadId') leadId?: string,
   ) {
-    return this.conversationsService.findAll(channel, search);
+    return this.conversationsService.findAll(channel, search, leadId);
   }
 
   @Get(':id')

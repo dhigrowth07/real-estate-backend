@@ -31,8 +31,8 @@ describe('ConversationsController', () => {
 
   it('findAll should call service.findAll', async () => {
     mockService.findAll.mockResolvedValue([]);
-    await controller.findAll(ChannelType.WHATSAPP, 'search');
-    expect(mockService.findAll).toHaveBeenCalledWith(ChannelType.WHATSAPP, 'search');
+    await controller.findAll(ChannelType.WHATSAPP, 'search', 'lead-1');
+    expect(mockService.findAll).toHaveBeenCalledWith(ChannelType.WHATSAPP, 'search', 'lead-1');
   });
 
   it('findOne should call service.findOne', async () => {

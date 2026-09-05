@@ -10,13 +10,17 @@ export class ConversationsService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Retrieves all conversations, optionally filtered by channel or search query
+   * Retrieves all conversations, optionally filtered by channel, leadId, or search query
    */
-  async findAll(channel?: ChannelType, search?: string) {
+  async findAll(channel?: ChannelType, search?: string, leadId?: string) {
     const where: any = {};
 
     if (channel) {
       where.channel = channel;
+    }
+
+    if (leadId) {
+      where.leadId = leadId;
     }
 
     if (search && search.trim()) {
