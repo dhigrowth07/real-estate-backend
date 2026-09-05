@@ -173,7 +173,7 @@ export class MergeLeadsService {
         where: { leadId: primary.id },
         select: { propertyId: true },
       });
-      const primaryPropertyIds = existingPrimaryMatches.map((m) => m.propertyId);
+      const primaryPropertyIds = (existingPrimaryMatches || []).map((m) => m.propertyId);
 
       // Delete any conflicting matches on secondary
       if (primaryPropertyIds.length > 0) {
