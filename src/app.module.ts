@@ -13,6 +13,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { InteractionsModule } from './interactions/interactions.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { PostMappingsModule } from './post-mappings/post-mappings.module';
+import { PhoneModule } from './common/phone/phone.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { PostMappingsModule } from './post-mappings/post-mappings.module';
     InteractionsModule,
     WebhooksModule,
     PostMappingsModule,
+    PhoneModule,
   ],
 })
 export class AppModule {}
