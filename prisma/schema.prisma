@@ -439,4 +439,35 @@ model WebhookLog {
   @@map("webhook_logs")
 }
 
+enum TemplateCategory {
+  MARKETING
+  UTILITY
+  AUTHENTICATION
+}
+
+enum TemplateStatus {
+  APPROVED
+  PENDING
+  REJECTED
+  PAUSED
+}
+
+/// Approved WhatsApp message templates for outbound communication
+model Template {
+  id         String           @id @default(uuid())
+  name       String           @unique // e.g. "property_details_share"
+  category   TemplateCategory @default(MARKETING)
+  language   String           @default("en")
+  headerType String?          // e.g. "IMAGE", "TEXT", "NONE"
+  bodyText   String           // Formatted body with {{1}}, {{2}} placeholders
+  variables  String[]         @default([]) // Named parameter list e.g. ["lead_name", "property_title", "location", "configuration", "price", "link"]
+  status     TemplateStatus   @default(APPROVED)
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  @@index([name])
+  @@index([status])
+  @@map("templates")
+}
+
 

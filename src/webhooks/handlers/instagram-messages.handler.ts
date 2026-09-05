@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PhoneExtractionService } from '../../common/phone/phone-extraction.service';
 import { MergeLeadsService } from '../../leads/merge-leads.service';
+import { WhatsAppTemplateService } from '../../whatsapp/whatsapp-template.service';
 import {
   ChannelType,
   LeadSource,
@@ -48,6 +49,7 @@ export class InstagramMessagesHandler {
     private readonly prisma: PrismaService,
     private readonly phoneExtractionService: PhoneExtractionService,
     private readonly mergeLeadsService: MergeLeadsService,
+    private readonly whatsAppTemplateService: WhatsAppTemplateService,
   ) {}
 
   /**
@@ -288,13 +290,20 @@ export class InstagramMessagesHandler {
   /**
    * Hook for Stage P2-9 Outbound WhatsApp Catalog Delivery
    */
-  private triggerOutboundWhatsAppDeliveryHook(
+  private async triggerOutboundWhatsAppDeliveryHook(
     leadId: string,
     phone: string,
     propertyId: string,
-  ): void {
+  ): Promise<void> {
     this.logger.log(
-      `[Stage P2-9 Trigger Hook] Queued automated WhatsApp property brochure delivery to ${phone} for Lead ${leadId} (Property: ${propertyId})`,
+      `[Stage P2-9 Trigger Hook] Initiating automated WhatsApp property brochure delivery to ${phone} for Lead ${leadId} (Property: ${propertyId})`,
     );
+    try {
+      await this.whatsAppTemplateService.sendPropertyDetailsTemplate(leadId);
+    } catch (err: any) {
+      this.logger.error(
+        `[Stage P2-9 Outbound Delivery] Failed to send property details template to Lead ${leadId}: ${err.message}`,
+      );
+    }
   }
 }

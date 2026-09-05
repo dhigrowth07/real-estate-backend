@@ -11,9 +11,17 @@ import { WhatsAppMessagesHandler } from './handlers/whatsapp-messages.handler';
 import { PhoneModule } from '../common/phone/phone.module';
 import { MatchesModule } from '../matches/matches.module';
 import { LeadsModule } from '../leads/leads.module';
+import { WhatsAppModule } from '../whatsapp/whatsapp.module';
 
 @Module({
-  imports: [PrismaModule, ConfigModule, PhoneModule, MatchesModule, LeadsModule],
+  imports: [
+    PrismaModule,
+    ConfigModule,
+    PhoneModule,
+    MatchesModule,
+    LeadsModule,
+    WhatsAppModule,
+  ],
   controllers: [WebhooksController],
   providers: [
     WebhooksService,

@@ -14,6 +14,7 @@ import { InteractionsModule } from './interactions/interactions.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { PostMappingsModule } from './post-mappings/post-mappings.module';
 import { PhoneModule } from './common/phone/phone.module';
+import { WhatsAppModule } from './whatsapp/whatsapp.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { PhoneModule } from './common/phone/phone.module';
     WebhooksModule,
     PostMappingsModule,
     PhoneModule,
+    WhatsAppModule,
   ],
 })
 export class AppModule {}

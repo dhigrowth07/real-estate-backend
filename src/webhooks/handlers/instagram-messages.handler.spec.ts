@@ -3,6 +3,7 @@ import { InstagramMessagesHandler } from './instagram-messages.handler';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PhoneExtractionService } from '../../common/phone/phone-extraction.service';
 import { MergeLeadsService } from '../../leads/merge-leads.service';
+import { WhatsAppTemplateService } from '../../whatsapp/whatsapp-template.service';
 import { LeadStage, ChannelType, LeadSource } from '@prisma/client';
 
 describe('InstagramMessagesHandler', () => {
@@ -10,6 +11,7 @@ describe('InstagramMessagesHandler', () => {
   let prisma: PrismaService;
   let phoneService: PhoneExtractionService;
   let mergeLeadsService: MergeLeadsService;
+  let whatsAppTemplateService: WhatsAppTemplateService;
 
   const mockPrisma = {
     message: {
@@ -51,6 +53,10 @@ describe('InstagramMessagesHandler', () => {
     }),
   };
 
+  const mockWhatsAppTemplateService = {
+    sendPropertyDetailsTemplate: jest.fn().mockResolvedValue({ success: true }),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
     const module: TestingModule = await Test.createTestingModule({
@@ -59,6 +65,7 @@ describe('InstagramMessagesHandler', () => {
         { provide: PrismaService, useValue: mockPrisma },
         { provide: PhoneExtractionService, useValue: mockPhoneService },
         { provide: MergeLeadsService, useValue: mockMergeLeadsService },
+        { provide: WhatsAppTemplateService, useValue: mockWhatsAppTemplateService },
       ],
     }).compile();
 
@@ -66,6 +73,7 @@ describe('InstagramMessagesHandler', () => {
     prisma = module.get<PrismaService>(PrismaService);
     phoneService = module.get<PhoneExtractionService>(PhoneExtractionService);
     mergeLeadsService = module.get<MergeLeadsService>(MergeLeadsService);
+    whatsAppTemplateService = module.get<WhatsAppTemplateService>(WhatsAppTemplateService);
   });
 
   it('should skip duplicate messages by externalMessageId', async () => {
