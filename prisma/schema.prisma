@@ -383,15 +383,18 @@ model PostPropertyMapping {
 
 /// Short-lived record linking an Instagram comment inquiry to a subsequent DM interaction
 model PendingInterest {
-  id              String   @id @default(uuid())
-  instagramUserId String   // IGSID of the user who commented
-  propertyId      String
-  property        Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
-  commentText     String   // Content of the user's comment
-  commentedAt     DateTime @default(now())
-  resolved        Boolean  @default(false) // True once answered/converted in DM
-  createdAt       DateTime @default(now())
+  id                String   @id @default(uuid())
+  commentId         String?  @unique // Meta Comment ID for exact event deduplication
+  instagramUserId   String   // IGSID of the user who commented
+  commenterUsername String?  // Public Instagram handle of commenter if available
+  propertyId        String
+  property          Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  commentText       String   // Content of the user's comment
+  commentedAt       DateTime @default(now())
+  resolved          Boolean  @default(false) // True once answered/converted in DM
+  createdAt         DateTime @default(now())
 
+  @@index([commentId])
   @@index([instagramUserId])
   @@index([propertyId])
   @@index([resolved])

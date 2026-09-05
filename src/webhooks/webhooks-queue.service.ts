@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { WebhooksService } from './webhooks.service';
 import { WebhookPlatform, WebhookStatus } from '@prisma/client';
+import { InstagramCommentsHandler } from './handlers/instagram-comments.handler';
 
 export interface WebhookJobData {
   logId: string;
@@ -13,7 +14,10 @@ export interface WebhookJobData {
 export class WebhooksQueueService {
   private readonly logger = new Logger(WebhooksQueueService.name);
 
-  constructor(private readonly webhooksService: WebhooksService) {}
+  constructor(
+    private readonly webhooksService: WebhooksService,
+    private readonly instagramCommentsHandler: InstagramCommentsHandler,
+  ) {}
 
   /**
    * Enqueues the webhook event for asynchronous background processing
@@ -132,8 +136,9 @@ export class WebhooksQueueService {
 
           if (field === 'comments') {
             this.logger.log(
-              `[Instagram Comment] Comment ID ${value?.id} by @${value?.from?.username || value?.from?.id}: "${value?.text}" on Media ${value?.media?.id}`,
+              `[Instagram Comment] Comment ID ${value?.id} by @${value?.from?.username || value?.from?.id}: "${value?.text}" on Media ${value?.media?.id || value?.media_id || value?.post_id}`,
             );
+            await this.instagramCommentsHandler.handleCommentEvent(value);
           } else if (field === 'mentions') {
             this.logger.log(
               `[Instagram Mention] Account mentioned in comment/post ID: ${value?.comment_id || value?.media_id}`,
