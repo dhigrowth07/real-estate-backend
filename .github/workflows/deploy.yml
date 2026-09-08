@@ -3,7 +3,7 @@ name: Deploy Backend to AWS EC2 via ECR & Docker Compose
 on:
   push:
     branches:
-      - dev
+      - phase-2
   workflow_dispatch:
 
 env:
