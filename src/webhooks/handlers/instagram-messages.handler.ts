@@ -495,6 +495,9 @@ export class InstagramMessagesHandler {
         }
       }
     }
+    return null;
+  }
+
   /**
    * Queries Meta Graph API to fetch the prospect's real name and public username
    */
