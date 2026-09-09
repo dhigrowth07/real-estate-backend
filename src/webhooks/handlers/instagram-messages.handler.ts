@@ -468,43 +468,83 @@ export class InstagramMessagesHandler {
   }
 
   /**
-   * Extracts a potential user name from freeform text messages (e.g. "My name is Dhinesh", "I am Alex")
+   * Extracts a potential user name from freeform text messages:
+   * 1. Explicit introductions: "My name is Dhinesh", "I am Alex", "Name: Dhinesh"
+   * 2. Direct name + phone format: "Dhinesh 8056649692", "Dhinesh - 8056649692", "Dhinesh : +91 8056649692"
+   * 3. Direct phone + name format: "8056649692 Dhinesh", "+91 8056649692 - Dhinesh Kumar"
    */
   private extractNameFromMessage(text: string): string | null {
     if (!text || typeof text !== 'string') return null;
-    const patterns = [
+
+    const stopWords = new Set([
+      'hi', 'hello', 'hey', 'dear', 'sir', 'madam', 'bro', 'brother',
+      'looking', 'interested', 'whatsapp', 'number', 'phone', 'sharing',
+      'sending', 'contact', 'details', 'villa', 'house', 'apartment',
+      'plot', 'flat', 'property', 'price', 'call', 'me', 'please',
+      'send', 'more', 'info', 'information', 'bhk', 'sqft', 'crore',
+      'lakh', 'budget', 'location', 'bangalore', 'chennai', 'hyderabad',
+      'mumbai', 'delhi', 'pune', 'ready', 'move', 'possession',
+    ]);
+
+    // Pattern 1: Explicit introductions ("My name is Alex", "I am Dhinesh", "Name: Dhinesh")
+    const explicitPatterns = [
       /(?:my name is|i am|i'm|this is|myself|name\s*[:\-])\s+([A-Za-z\s]{2,25})/i,
       /(?:^|\n)\s*(?:name\s*[:\-]?\s*)([A-Za-z\s]{2,25})/i,
     ];
-    for (const pattern of patterns) {
+    for (const pattern of explicitPatterns) {
       const match = text.match(pattern);
       if (match && match[1]) {
         const cleaned = match[1].trim().replace(/[.,;!]$/, '');
-        const ignored = [
-          'looking',
-          'interested',
-          'whatsapp',
-          'number',
-          'phone',
-          'sharing',
-          'sending',
-          'contact',
-          'details',
-          'villa',
-          'house',
-          'apartment',
-        ];
+        const words = cleaned.split(/\s+/).filter(Boolean);
         if (
-          cleaned.length >= 2 &&
-          !ignored.some((w) => cleaned.toLowerCase().includes(w))
+          words.length >= 1 &&
+          words.length <= 4 &&
+          !words.some((w) => stopWords.has(w.toLowerCase()))
         ) {
-          return cleaned
-            .split(/\s+/)
+          return words
             .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
             .join(' ');
         }
       }
     }
+
+    // Pattern 2: "[Name] [Phone]" (e.g. "Dhinesh 8056649692", "Dhinesh - +91 8056649692")
+    const nameBeforePhonePattern = /^\s*([A-Za-z\s]{2,25})\s*[-–:,]?\s*(?:\+?\d[\d\s-]{7,15})/i;
+    const matchBefore = text.match(nameBeforePhonePattern);
+    if (matchBefore && matchBefore[1]) {
+      const cleaned = matchBefore[1]
+        .trim()
+        .replace(/^(hi|hello|hey)\s+/i, '')
+        .replace(/[.,;!]$/, '');
+      const words = cleaned.split(/\s+/).filter(Boolean);
+      if (
+        words.length >= 1 &&
+        words.length <= 3 &&
+        !words.some((w) => stopWords.has(w.toLowerCase()))
+      ) {
+        return words
+          .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+          .join(' ');
+      }
+    }
+
+    // Pattern 3: "[Phone] [Name]" (e.g. "8056649692 Dhinesh", "+918056649692 - Dhinesh Kumar")
+    const nameAfterPhonePattern = /(?:\+?\d[\d\s-]{7,15})\s*[-–:,]?\s*([A-Za-z\s]{2,25})\s*$/i;
+    const matchAfter = text.match(nameAfterPhonePattern);
+    if (matchAfter && matchAfter[1]) {
+      const cleaned = matchAfter[1].trim().replace(/[.,;!]$/, '');
+      const words = cleaned.split(/\s+/).filter(Boolean);
+      if (
+        words.length >= 1 &&
+        words.length <= 3 &&
+        !words.some((w) => stopWords.has(w.toLowerCase()))
+      ) {
+        return words
+          .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+          .join(' ');
+      }
+    }
+
     return null;
   }
 
@@ -520,7 +560,7 @@ export class InstagramMessagesHandler {
       this.configService.get<string>('WHATSAPP_API_TOKEN');
 
     if (!token) {
-      this.logger.debug(`[Instagram Profile] No API token configured for profile lookup.`);
+      this.logger.warn(`[Instagram Profile] No API token configured for profile lookup.`);
       return null;
     }
 
@@ -543,12 +583,12 @@ export class InstagramMessagesHandler {
           };
         } else {
           const errBody = await res.text();
-          this.logger.debug(
+          this.logger.warn(
             `[Instagram Profile Lookup Attempt Failed] URL: ${url.split('?')[0]}, Status: ${res.status}, Body: ${errBody}`,
           );
         }
       } catch (err: any) {
-        this.logger.debug(`[Instagram Profile Fetch Error] ${err.message}`);
+        this.logger.warn(`[Instagram Profile Fetch Error] ${err.message}`);
       }
     }
 
