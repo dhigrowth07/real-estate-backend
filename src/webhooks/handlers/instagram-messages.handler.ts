@@ -77,10 +77,19 @@ export class InstagramMessagesHandler {
     const messageObj = event?.message;
     const postbackObj = event?.postback;
 
+    this.logger.log(`[Instagram Inbound DM Event] Raw Event: ${JSON.stringify(event)}`);
+
     // Ignore echo messages (messages sent by our own business account)
     if (messageObj?.is_echo || event?.is_echo) {
       return null;
     }
+
+    const directUsername =
+      event?.sender?.username ||
+      event?.from?.username ||
+      event?.username ||
+      event?.sender?.name ||
+      event?.from?.name;
 
     const externalMessageId =
       messageObj?.mid ||
@@ -131,7 +140,7 @@ export class InstagramMessagesHandler {
 
       const profile = await this.fetchInstagramUserProfile(senderId);
       const commenterUsername =
-        profile?.username || priorInterest?.commenterUsername;
+        directUsername || profile?.username || priorInterest?.commenterUsername;
 
       let initialName = `Instagram User (${senderId.slice(-4)})`;
       if (profile?.name) {
@@ -139,7 +148,7 @@ export class InstagramMessagesHandler {
           ? `${profile.name} (@${profile.username})`
           : profile.name;
       } else if (commenterUsername) {
-        initialName = `@${commenterUsername}`;
+        initialName = commenterUsername.startsWith('@') ? commenterUsername : `@${commenterUsername}`;
       }
 
       lead = await this.prisma.lead.create({
@@ -252,11 +261,12 @@ export class InstagramMessagesHandler {
         });
       }
 
-      // Resolve intelligent Lead Name from message text, Meta Graph API profile, or Instagram username
+      // Resolve intelligent Lead Name from direct username, message text, Meta Graph API profile, or Instagram username
       let resolvedName = lead.name;
       const extractedName = this.extractNameFromMessage(rawText);
       const profile = await this.fetchInstagramUserProfile(senderId);
       const commenterUsername =
+        directUsername ||
         profile?.username ||
         pendingInterests.find((p) => p.commenterUsername)?.commenterUsername;
 
@@ -267,7 +277,7 @@ export class InstagramMessagesHandler {
           ? `${profile.name} (@${profile.username})`
           : profile.name;
       } else if (commenterUsername && (lead.name.startsWith('Instagram User') || !lead.name)) {
-        resolvedName = `@${commenterUsername}`;
+        resolvedName = commenterUsername.startsWith('@') ? commenterUsername : `@${commenterUsername}`;
       }
 
       // Ensure "Instagram" is present in sources array
@@ -510,24 +520,38 @@ export class InstagramMessagesHandler {
       this.configService.get<string>('WHATSAPP_API_TOKEN');
 
     if (!token) {
+      this.logger.debug(`[Instagram Profile] No API token configured for profile lookup.`);
       return null;
     }
 
-    try {
-      const url = `https://graph.facebook.com/v20.0/${igsid}?fields=name,username,profile_pic&access_token=${token}`;
-      const res = await fetch(url);
-      if (!res.ok) {
-        return null;
+    // Try Graph API endpoint variants for IGSID user profile
+    const endpoints = [
+      `https://graph.facebook.com/v20.0/${igsid}?fields=name,username,profile_pic&access_token=${token}`,
+      `https://graph.instagram.com/v20.0/${igsid}?fields=id,username,name&access_token=${token}`,
+      `https://graph.facebook.com/v20.0/${igsid}?fields=id,name&access_token=${token}`,
+    ];
+
+    for (const url of endpoints) {
+      try {
+        const res = await fetch(url);
+        if (res.ok) {
+          const data = await res.json();
+          this.logger.log(`[Instagram Profile Lookup Success] IGSID ${igsid}: ${JSON.stringify(data)}`);
+          return {
+            name: data?.name || undefined,
+            username: data?.username || undefined,
+          };
+        } else {
+          const errBody = await res.text();
+          this.logger.debug(
+            `[Instagram Profile Lookup Attempt Failed] URL: ${url.split('?')[0]}, Status: ${res.status}, Body: ${errBody}`,
+          );
+        }
+      } catch (err: any) {
+        this.logger.debug(`[Instagram Profile Fetch Error] ${err.message}`);
       }
-      const data = await res.json();
-      return {
-        name: data?.name || undefined,
-        username: data?.username || undefined,
-      };
-    } catch (err: any) {
-      this.logger.debug(`Could not fetch profile for IGSID ${igsid}: ${err.message}`);
-      return null;
     }
+
+    return null;
   }
 }
-
