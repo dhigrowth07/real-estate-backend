@@ -65,19 +65,32 @@ export class InstagramMessagesHandler {
    * Processes an incoming Instagram Direct Message webhook event
    */
   async handleInboundDm(
-    event: InstagramMessagingWebhookEvent,
+    event: InstagramMessagingWebhookEvent | any,
   ): Promise<InstagramDmProcessResult | null> {
-    const senderId = event?.sender?.id;
+    const senderId =
+      event?.sender?.id ||
+      event?.from?.id ||
+      event?.sender_id ||
+      event?.user_id;
     const messageObj = event?.message;
     const postbackObj = event?.postback;
 
     // Ignore echo messages (messages sent by our own business account)
-    if (messageObj?.is_echo) {
+    if (messageObj?.is_echo || event?.is_echo) {
       return null;
     }
 
-    const externalMessageId = messageObj?.mid || postbackObj?.mid;
-    const rawText = messageObj?.text?.trim() || postbackObj?.payload?.trim() || '';
+    const externalMessageId =
+      messageObj?.mid ||
+      postbackObj?.mid ||
+      event?.id ||
+      event?.mid;
+    const rawText =
+      messageObj?.text?.trim() ||
+      postbackObj?.payload?.trim() ||
+      event?.text?.trim() ||
+      event?.body?.trim() ||
+      '';
 
     if (!senderId) {
       this.logger.warn('[Instagram Inbound DM] Missing sender ID. Skipping.');

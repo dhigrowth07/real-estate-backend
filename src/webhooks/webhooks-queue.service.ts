@@ -150,7 +150,16 @@ export class WebhooksQueueService {
               `[Instagram Mention] Account mentioned in comment/post ID: ${value?.comment_id || value?.media_id}`,
             );
           } else if (field === 'messages') {
-            this.logger.log(`[Instagram Message Change] Field: ${field}`);
+            this.logger.log(
+              `[Instagram Message Change] Processing message change event: ${JSON.stringify(value)}`,
+            );
+            if (Array.isArray(value)) {
+              for (const v of value) {
+                await this.instagramMessagesHandler.handleInboundDm(v);
+              }
+            } else if (value) {
+              await this.instagramMessagesHandler.handleInboundDm(value);
+            }
           } else {
             this.logger.log(`[Instagram Change] Field: ${field}`);
           }
