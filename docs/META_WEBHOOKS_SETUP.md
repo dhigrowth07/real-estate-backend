@@ -1,6 +1,6 @@
 # Meta Webhooks Infrastructure & Verification Setup Guide
 
-This guide details how to expose your local Infragen backend and configure Webhooks in the **Meta App Dashboard** for both **WhatsApp Cloud API** and **Instagram Graph API**.
+This guide details how to expose your local PropCRM backend and configure Webhooks in the **Meta App Dashboard** for both **WhatsApp Cloud API** and **Instagram Graph API**.
 
 ---
 
