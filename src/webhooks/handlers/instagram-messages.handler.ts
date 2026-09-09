@@ -122,9 +122,17 @@ export class InstagramMessagesHandler {
     });
 
     if (!lead) {
+      const priorInterest = await this.prisma.pendingInterest.findFirst({
+        where: { instagramUserId: senderId },
+        orderBy: { createdAt: 'desc' },
+      });
+      const initialName = priorInterest?.commenterUsername
+        ? `@${priorInterest.commenterUsername}`
+        : `Instagram User (${senderId.slice(-4)})`;
+
       lead = await this.prisma.lead.create({
         data: {
-          name: `Instagram User (${senderId.slice(-4)})`,
+          name: initialName,
           phone: '',
           source: LeadSource.INSTAGRAM,
           sources: ['Instagram'],
@@ -136,7 +144,7 @@ export class InstagramMessagesHandler {
         },
       });
       this.logger.log(
-        `[Instagram Inbound DM] Created new Unqualified Lead "${lead.id}" for Instagram User "${senderId}"`,
+        `[Instagram Inbound DM] Created new Unqualified Lead "${lead.id}" (${initialName}) for Instagram User "${senderId}"`,
       );
     }
 
@@ -232,16 +240,28 @@ export class InstagramMessagesHandler {
         });
       }
 
+      // Resolve intelligent Lead Name from message text or Instagram username
+      let resolvedName = lead.name;
+      const extractedName = this.extractNameFromMessage(rawText);
+      const commenterUsername = pendingInterests.find((p) => p.commenterUsername)?.commenterUsername;
+
+      if (extractedName) {
+        resolvedName = extractedName;
+      } else if (commenterUsername && (lead.name.startsWith('Instagram User') || !lead.name)) {
+        resolvedName = `@${commenterUsername}`;
+      }
+
       // Ensure "Instagram" is present in sources array
       const currentSources = Array.isArray(lead.sources) ? [...lead.sources] : [];
       if (!currentSources.includes('Instagram')) {
         currentSources.push('Instagram');
       }
 
-      // Update Lead with phone, consent evidence, and upgrade stage to NEW
+      // Update Lead with name, phone, consent evidence, and upgrade stage to NEW
       lead = await this.prisma.lead.update({
         where: { id: lead.id },
         data: {
+          name: resolvedName,
           phone: formattedPhone,
           whatsappOptIn: true,
           whatsappOptInEvidence: rawText,
@@ -252,7 +272,7 @@ export class InstagramMessagesHandler {
       });
 
       this.logger.log(
-        `[Instagram Inbound DM] Upgraded Lead "${lead.id}" to stage "NEW", WhatsApp Opt-In verified, Property: "${interestedPropertyId || 'None'}".`,
+        `[Instagram Inbound DM] Upgraded Lead "${lead.id}" (${lead.name}) to stage "NEW", WhatsApp Opt-In verified, Property: "${interestedPropertyId || 'None'}".`,
       );
 
       // Check if duplicate lead exists with the same phone and merge
@@ -417,4 +437,46 @@ export class InstagramMessagesHandler {
       );
     }
   }
+
+  /**
+   * Extracts a potential user name from freeform text messages (e.g. "My name is Dhinesh", "I am Alex")
+   */
+  private extractNameFromMessage(text: string): string | null {
+    if (!text || typeof text !== 'string') return null;
+    const patterns = [
+      /(?:my name is|i am|i'm|this is|myself|name\s*[:\-])\s+([A-Za-z\s]{2,25})/i,
+      /(?:^|\n)\s*(?:name\s*[:\-]?\s*)([A-Za-z\s]{2,25})/i,
+    ];
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match && match[1]) {
+        const cleaned = match[1].trim().replace(/[.,;!]$/, '');
+        const ignored = [
+          'looking',
+          'interested',
+          'whatsapp',
+          'number',
+          'phone',
+          'sharing',
+          'sending',
+          'contact',
+          'details',
+          'villa',
+          'house',
+          'apartment',
+        ];
+        if (
+          cleaned.length >= 2 &&
+          !ignored.some((w) => cleaned.toLowerCase().includes(w))
+        ) {
+          return cleaned
+            .split(/\s+/)
+            .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+            .join(' ');
+        }
+      }
+    }
+    return null;
+  }
 }
+
