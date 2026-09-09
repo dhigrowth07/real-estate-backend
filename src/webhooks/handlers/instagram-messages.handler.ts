@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PhoneExtractionService } from '../../common/phone/phone-extraction.service';
 import { MergeLeadsService } from '../../leads/merge-leads.service';
@@ -55,6 +56,7 @@ export class InstagramMessagesHandler {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly configService: ConfigService,
     private readonly phoneExtractionService: PhoneExtractionService,
     private readonly mergeLeadsService: MergeLeadsService,
     private readonly whatsAppTemplateService: WhatsAppTemplateService,
@@ -126,9 +128,19 @@ export class InstagramMessagesHandler {
         where: { instagramUserId: senderId },
         orderBy: { createdAt: 'desc' },
       });
-      const initialName = priorInterest?.commenterUsername
-        ? `@${priorInterest.commenterUsername}`
-        : `Instagram User (${senderId.slice(-4)})`;
+
+      const profile = await this.fetchInstagramUserProfile(senderId);
+      const commenterUsername =
+        profile?.username || priorInterest?.commenterUsername;
+
+      let initialName = `Instagram User (${senderId.slice(-4)})`;
+      if (profile?.name) {
+        initialName = profile.username
+          ? `${profile.name} (@${profile.username})`
+          : profile.name;
+      } else if (commenterUsername) {
+        initialName = `@${commenterUsername}`;
+      }
 
       lead = await this.prisma.lead.create({
         data: {
@@ -240,13 +252,20 @@ export class InstagramMessagesHandler {
         });
       }
 
-      // Resolve intelligent Lead Name from message text or Instagram username
+      // Resolve intelligent Lead Name from message text, Meta Graph API profile, or Instagram username
       let resolvedName = lead.name;
       const extractedName = this.extractNameFromMessage(rawText);
-      const commenterUsername = pendingInterests.find((p) => p.commenterUsername)?.commenterUsername;
+      const profile = await this.fetchInstagramUserProfile(senderId);
+      const commenterUsername =
+        profile?.username ||
+        pendingInterests.find((p) => p.commenterUsername)?.commenterUsername;
 
       if (extractedName) {
         resolvedName = extractedName;
+      } else if (profile?.name) {
+        resolvedName = profile.username
+          ? `${profile.name} (@${profile.username})`
+          : profile.name;
       } else if (commenterUsername && (lead.name.startsWith('Instagram User') || !lead.name)) {
         resolvedName = `@${commenterUsername}`;
       }
@@ -476,7 +495,36 @@ export class InstagramMessagesHandler {
         }
       }
     }
-    return null;
+  /**
+   * Queries Meta Graph API to fetch the prospect's real name and public username
+   */
+  private async fetchInstagramUserProfile(
+    igsid: string,
+  ): Promise<{ name?: string; username?: string } | null> {
+    const token =
+      this.configService.get<string>('INSTAGRAM_API_TOKEN') ||
+      this.configService.get<string>('META_PAGE_ACCESS_TOKEN') ||
+      this.configService.get<string>('WHATSAPP_API_TOKEN');
+
+    if (!token) {
+      return null;
+    }
+
+    try {
+      const url = `https://graph.facebook.com/v20.0/${igsid}?fields=name,username,profile_pic&access_token=${token}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        return null;
+      }
+      const data = await res.json();
+      return {
+        name: data?.name || undefined,
+        username: data?.username || undefined,
+      };
+    } catch (err: any) {
+      this.logger.debug(`Could not fetch profile for IGSID ${igsid}: ${err.message}`);
+      return null;
+    }
   }
 }
 
