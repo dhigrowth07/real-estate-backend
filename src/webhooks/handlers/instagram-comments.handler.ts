@@ -135,9 +135,14 @@ export class InstagramCommentsHandler {
             return resolvedMapping as MappingWithProperty;
           }
         }
+      } else {
+        const errText = await res.text();
+        this.logger.warn(
+          `[Instagram Comment] Graph API lookup for Media ID "${mediaId}" failed (Status ${res.status}): ${errText}`,
+        );
       }
     } catch (err: any) {
-      this.logger.debug(
+      this.logger.warn(
         `[Instagram Comment] Graph API shortcode resolution failed for Media ID "${mediaId}": ${err.message}`,
       );
     }
