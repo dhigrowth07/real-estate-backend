@@ -196,6 +196,7 @@ export class WhatsAppTemplateService implements OnModuleInit {
       languageCode: template.language,
       headerImageUrl: primaryImageUrl,
       bodyParameters,
+      renderedText,
     });
 
     // 7. Upsert Conversation & Log outbound Message record
@@ -285,6 +286,7 @@ export class WhatsAppTemplateService implements OnModuleInit {
       languageCode: template.language,
       headerImageUrl,
       bodyParameters: parameters,
+      renderedText,
     });
 
     const conversation = await this.prisma.conversation.upsert({
@@ -336,6 +338,7 @@ export class WhatsAppTemplateService implements OnModuleInit {
     languageCode: string;
     headerImageUrl?: string | null;
     bodyParameters: string[];
+    renderedText?: string;
   }): Promise<{ messageId: string; status: MessageStatus }> {
     const apiToken = this.configService.get<string>('WHATSAPP_API_TOKEN');
     const phoneNumberId = this.configService.get<string>('WHATSAPP_PHONE_NUMBER_ID');
@@ -397,6 +400,51 @@ export class WhatsAppTemplateService implements OnModuleInit {
           this.logger.error(
             `[Meta Cloud API Error] ${response.status}: ${JSON.stringify(data)}`,
           );
+
+          // Best Practice Fallback: If template is not yet approved/created in Meta (code 132001 or 404),
+          // fallback to sending as a direct formatted text message with the property link
+          if (data?.error?.code === 132001 || response.status === 404) {
+            this.logger.log(
+              `[WhatsApp Template Fallback] Template "${params.templateName}" not found in Meta account. Falling back to direct text brochure message.`,
+            );
+            try {
+              const textUrl = `https://graph.facebook.com/v19.0/${phoneNumberId}/messages`;
+              const textPayload = {
+                messaging_product: 'whatsapp',
+                recipient_type: 'individual',
+                to: cleanTo,
+                type: 'text',
+                text: {
+                  preview_url: true,
+                  body: params.renderedText || 'Thank you for reaching out! Here are the property details.',
+                },
+              };
+
+              const textRes = await fetch(textUrl, {
+                method: 'POST',
+                headers: {
+                  Authorization: `Bearer ${apiToken}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(textPayload),
+              });
+
+              if (textRes.ok) {
+                const textData = await textRes.json();
+                const fallbackMsgId = textData?.messages?.[0]?.id || `wamid.${Date.now()}`;
+                this.logger.log(
+                  `[WhatsApp Template Fallback] Successfully sent fallback text message (${fallbackMsgId}) to "${cleanTo}".`,
+                );
+                return {
+                  messageId: fallbackMsgId,
+                  status: MessageStatus.SENT,
+                };
+              }
+            } catch (fallbackErr: any) {
+              this.logger.warn(`[WhatsApp Template Fallback Error] ${fallbackErr.message}`);
+            }
+          }
+
           return {
             messageId: `failed-${Date.now()}`,
             status: MessageStatus.FAILED,
