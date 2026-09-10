@@ -36,6 +36,7 @@ export interface SendInteractiveMessageResult {
   leadId?: string | null;
   renderedText: string;
   status: MessageStatus;
+  error?: string;
 }
 
 export interface InteractiveMessageOptions {
@@ -164,18 +165,27 @@ export class WhatsAppInteractiveMessageService {
       },
     });
 
-    this.logger.log(
-      `[WhatsAppInteractiveMessageService] Sent interactive button message to "${cleanTo}" (${buttons.length} buttons). Message ID: "${message.id}".`,
-    );
+    const isSuccessful = metaResponse.status !== MessageStatus.FAILED;
+
+    if (isSuccessful) {
+      this.logger.log(
+        `[WhatsAppInteractiveMessageService] Sent interactive button message to "${cleanTo}" (${buttons.length} buttons). Message ID: "${message.id}".`,
+      );
+    } else {
+      this.logger.warn(
+        `[WhatsAppInteractiveMessageService] Failed to dispatch interactive button message to "${cleanTo}". Message ID: "${message.id}". Error: ${metaResponse.error}`,
+      );
+    }
 
     return {
-      success: true,
+      success: isSuccessful,
       messageId: message.id,
       externalMessageId: metaResponse.messageId,
       conversationId: conversation.id,
       leadId: options?.leadId || null,
       renderedText,
       status: metaResponse.status,
+      error: metaResponse.error,
     };
   }
 
@@ -311,18 +321,27 @@ export class WhatsAppInteractiveMessageService {
       },
     });
 
-    this.logger.log(
-      `[WhatsAppInteractiveMessageService] Sent interactive list message to "${cleanTo}" (${totalRows} options). Message ID: "${message.id}".`,
-    );
+    const isSuccessful = metaResponse.status !== MessageStatus.FAILED;
+
+    if (isSuccessful) {
+      this.logger.log(
+        `[WhatsAppInteractiveMessageService] Sent interactive list message to "${cleanTo}" (${totalRows} options). Message ID: "${message.id}".`,
+      );
+    } else {
+      this.logger.warn(
+        `[WhatsAppInteractiveMessageService] Failed to dispatch interactive list message to "${cleanTo}". Message ID: "${message.id}". Error: ${metaResponse.error}`,
+      );
+    }
 
     return {
-      success: true,
+      success: isSuccessful,
       messageId: message.id,
       externalMessageId: metaResponse.messageId,
       conversationId: conversation.id,
       leadId: options?.leadId || null,
       renderedText,
       status: metaResponse.status,
+      error: metaResponse.error,
     };
   }
 
@@ -391,18 +410,27 @@ export class WhatsAppInteractiveMessageService {
       },
     });
 
-    this.logger.log(
-      `[WhatsAppInteractiveMessageService] Sent text message to "${cleanTo}". Message ID: "${message.id}".`,
-    );
+    const isSuccessful = metaResponse.status !== MessageStatus.FAILED;
+
+    if (isSuccessful) {
+      this.logger.log(
+        `[WhatsAppInteractiveMessageService] Sent text message to "${cleanTo}". Message ID: "${message.id}".`,
+      );
+    } else {
+      this.logger.warn(
+        `[WhatsAppInteractiveMessageService] Failed to dispatch text message to "${cleanTo}". Message ID: "${message.id}". Error: ${metaResponse.error}`,
+      );
+    }
 
     return {
-      success: true,
+      success: isSuccessful,
       messageId: message.id,
       externalMessageId: metaResponse.messageId,
       conversationId: conversation.id,
       leadId: options?.leadId || null,
       renderedText: bodyText,
       status: metaResponse.status,
+      error: metaResponse.error,
     };
   }
 
@@ -411,7 +439,7 @@ export class WhatsAppInteractiveMessageService {
    */
   private async dispatchMetaCloudApi(
     payload: any,
-  ): Promise<{ messageId: string; status: MessageStatus }> {
+  ): Promise<{ messageId: string; status: MessageStatus; error?: string }> {
     const apiToken = this.configService.get<string>('WHATSAPP_API_TOKEN');
     const phoneNumberId = this.configService.get<string>('WHATSAPP_PHONE_NUMBER_ID');
 
@@ -429,13 +457,21 @@ export class WhatsAppInteractiveMessageService {
 
         const data = await response.json();
         if (!response.ok) {
-          this.logger.error(
-            `[WhatsApp Cloud API Interactive Error] Status ${response.status}: ${JSON.stringify(data)}`,
-          );
-          // Fall back gracefully with generated ID in dev
+          const isTokenExpired = data?.error?.code === 190 || response.status === 401;
+          if (isTokenExpired) {
+            this.logger.error(
+              `[WhatsApp Cloud API Interactive Error] Meta Access Token has expired (Error 190 / 401). Please update WHATSAPP_API_TOKEN in your environment configuration.`,
+            );
+          } else {
+            this.logger.error(
+              `[WhatsApp Cloud API Interactive Error] Status ${response.status}: ${JSON.stringify(data)}`,
+            );
+          }
+
           return {
-            messageId: `wamid.SIMULATED_ERR_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-            status: MessageStatus.SENT,
+            messageId: `wamid.FAILED_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            status: MessageStatus.FAILED,
+            error: data?.error?.message || `HTTP ${response.status} Error`,
           };
         }
 
@@ -452,8 +488,9 @@ export class WhatsAppInteractiveMessageService {
           `[WhatsApp Cloud API Interactive Exception] ${err.message}`,
         );
         return {
-          messageId: `wamid.SIMULATED_NET_ERR_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-          status: MessageStatus.SENT,
+          messageId: `wamid.FAILED_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          status: MessageStatus.FAILED,
+          error: err.message,
         };
       }
     }
