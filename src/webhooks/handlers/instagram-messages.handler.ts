@@ -160,21 +160,36 @@ export class InstagramMessagesHandler {
         initialName = null; // No placeholder string; leave null rather than guessing
       }
 
-      lead = await this.prisma.lead.create({
-        data: {
-          name: initialName,
-          phone: '',
-          source: LeadSource.INSTAGRAM,
-          sources: ['Instagram'],
-          stage: LeadStage.UNQUALIFIED,
-          qualificationStatus: LeadQualificationStatus.UNQUALIFIED,
-          instagramUserId: senderId,
-          preferredLocations: [],
-        },
-      });
-      this.logger.log(
-        `[Instagram Inbound DM] Created new Unqualified Lead "${lead.id}" (${initialName || 'Unnamed'}) for Instagram User "${senderId}"`,
-      );
+      try {
+        lead = await this.prisma.lead.create({
+          data: {
+            name: initialName,
+            phone: '',
+            source: LeadSource.INSTAGRAM,
+            sources: ['Instagram'],
+            stage: LeadStage.UNQUALIFIED,
+            qualificationStatus: LeadQualificationStatus.UNQUALIFIED,
+            instagramUserId: senderId,
+            preferredLocations: [],
+          },
+        });
+        this.logger.log(
+          `[Instagram Inbound DM] Created new Unqualified Lead "${lead.id}" (${initialName || 'Unnamed'}) for Instagram User "${senderId}"`,
+        );
+      } catch (createErr: any) {
+        // Handle race condition where another concurrent webhook created the lead first
+        const concurrentLead = await this.prisma.lead.findUnique({
+          where: { instagramUserId: senderId },
+        });
+        if (concurrentLead) {
+          lead = concurrentLead;
+          this.logger.log(
+            `[Instagram Inbound DM] Concurrently created Lead "${lead.id}" retrieved for Instagram User "${senderId}"`,
+          );
+        } else {
+          throw createErr;
+        }
+      }
     }
 
     // 3. Find or create Conversation & store Message record
