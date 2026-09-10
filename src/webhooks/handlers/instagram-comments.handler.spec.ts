@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { InstagramCommentsHandler } from './instagram-comments.handler';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ConfigService } from '@nestjs/config';
 
 describe('InstagramCommentsHandler', () => {
   let handler: InstagramCommentsHandler;
@@ -13,7 +14,17 @@ describe('InstagramCommentsHandler', () => {
     },
     postPropertyMapping: {
       findFirst: jest.fn(),
+      upsert: jest.fn(),
     },
+  };
+
+  const mockConfigService = {
+    get: jest.fn().mockImplementation((key: string) => {
+      if (key === 'META_PAGE_ACCESS_TOKEN' || key === 'INSTAGRAM_API_TOKEN') {
+        return 'mock_meta_token_xyz';
+      }
+      return null;
+    }),
   };
 
   beforeEach(async () => {
@@ -22,6 +33,7 @@ describe('InstagramCommentsHandler', () => {
       providers: [
         InstagramCommentsHandler,
         { provide: PrismaService, useValue: mockPrisma },
+        { provide: ConfigService, useValue: mockConfigService },
       ],
     }).compile();
 
@@ -131,3 +143,4 @@ describe('InstagramCommentsHandler', () => {
     expect(resNoUser).toBeNull();
   });
 });
+
