@@ -302,6 +302,8 @@ export class InstagramMessagesHandler {
       } else if (commenterUsername && (!lead.name || lead.name.startsWith('@'))) {
         const clean = commenterUsername.trim();
         resolvedName = clean.startsWith('@') ? clean : `@${clean}`;
+      } else if (!resolvedName) {
+        resolvedName = `Instagram User (${formattedPhone.slice(-4)})`;
       }
 
       // Ensure "Instagram" is present in sources array
