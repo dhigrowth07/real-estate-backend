@@ -19,6 +19,10 @@ import {
 
 import { ConfigService } from '@nestjs/config';
 
+import { InstagramProfileService } from './instagram-profile.service';
+
+import { LeadQualificationService } from '../leads/lead-qualification.service';
+
 describe('STAGE P2-15 — Edge Case & Reliability End-to-End Test Suite', () => {
   let commentsHandler: InstagramCommentsHandler;
   let instagramDmHandler: InstagramMessagesHandler;
@@ -26,6 +30,19 @@ describe('STAGE P2-15 — Edge Case & Reliability End-to-End Test Suite', () => 
   let mergeLeadsService: MergeLeadsService;
   let whatsAppTemplateService: WhatsAppTemplateService;
   let phoneExtractionService: PhoneExtractionService;
+
+  const mockInstagramProfileService = {
+    getProfile: jest.fn().mockResolvedValue({
+      name: 'Test Instagram User',
+      username: 'testuser',
+      profilePic: 'https://example.com/pic.jpg',
+    }),
+  };
+
+  const mockLeadQualificationService = {
+    startQualification: jest.fn().mockResolvedValue({ success: true, onboardingStep: 'ASK_PROPERTY_TYPE' }),
+    handleReply: jest.fn().mockResolvedValue({ handled: true }),
+  };
 
   const mockConfigService = {
     get: jest.fn((key: string) => {
@@ -111,6 +128,8 @@ describe('STAGE P2-15 — Edge Case & Reliability End-to-End Test Suite', () => 
         MergeLeadsService,
         WhatsAppTemplateService,
         PhoneExtractionService,
+        { provide: InstagramProfileService, useValue: mockInstagramProfileService },
+        { provide: LeadQualificationService, useValue: mockLeadQualificationService },
         { provide: PrismaService, useValue: mockPrisma },
         { provide: MatchesService, useValue: mockMatchesService },
         { provide: ConfigService, useValue: mockConfigService },

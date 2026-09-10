@@ -2,10 +2,13 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PhoneExtractionService } from '../../common/phone/phone-extraction.service';
 import { MatchesService } from '../../matches/matches.service';
+import { LeadQualificationService } from '../../leads/lead-qualification.service';
 import {
   ChannelType,
   LeadSource,
   LeadStage,
+  LeadQualificationStatus,
+  OnboardingStep,
   MessageDirection,
   MessageStatus,
   MessageType,
@@ -51,6 +54,8 @@ export interface WhatsAppProcessResult {
   messageId: string;
   isNewLead: boolean;
   phone: string;
+  qualificationStarted?: boolean;
+  qualificationHandled?: boolean;
 }
 
 @Injectable()
@@ -61,6 +66,7 @@ export class WhatsAppMessagesHandler {
     private readonly prisma: PrismaService,
     private readonly phoneExtractionService: PhoneExtractionService,
     private readonly matchesService: MatchesService,
+    private readonly leadQualificationService: LeadQualificationService,
   ) {}
 
   /**
@@ -132,10 +138,9 @@ export class WhatsAppMessagesHandler {
           source: LeadSource.WHATSAPP,
           sources: ['WhatsApp'],
           stage: LeadStage.NEW,
+          qualificationStatus: LeadQualificationStatus.UNQUALIFIED,
           whatsappOptIn: true,
           whatsappOptInEvidence: rawText || 'Direct inbound WhatsApp message',
-          budgetMin: 0,
-          budgetMax: 0,
           preferredLocations: [],
         },
       });
@@ -211,7 +216,48 @@ export class WhatsAppMessagesHandler {
       `[WhatsApp Handler] Logged Message "${message.id}" in Conversation "${conversation.id}" from "${normalizedPhone}"`,
     );
 
-    // 6. Trigger Matching Engine for new leads
+    let qualificationStarted = false;
+    let qualificationHandled = false;
+
+    // 6. Lead Qualification Bot Integration (STAGE QB-7)
+    // First-ever contact via WhatsApp directly (no existing lead prior to this event)
+    if (isNewLead && lead.qualificationStatus === LeadQualificationStatus.UNQUALIFIED) {
+      try {
+        await this.leadQualificationService.startQualification(lead.id);
+        qualificationStarted = true;
+        this.logger.log(
+          `[Stage QB-7 WhatsApp Trigger] Started automated qualification flow for new direct WhatsApp Lead "${lead.id}".`,
+        );
+      } catch (err: any) {
+        this.logger.error(
+          `[Stage QB-7 WhatsApp Trigger ERROR] Failed to start qualification for Lead "${lead.id}": ${err.message}`,
+        );
+      }
+    } else if (
+      !isNewLead &&
+      conversation.onboardingStep !== OnboardingStep.NOT_STARTED &&
+      conversation.onboardingStep !== OnboardingStep.COMPLETE
+    ) {
+      // Dispatches reply to active qualification state machine
+      try {
+        await this.leadQualificationService.handleReply(conversation.id, {
+          text: rawText,
+          buttonId: msg.interactive?.button_reply?.id || msg.button?.payload,
+          listId: msg.interactive?.list_reply?.id,
+          interactive: msg.interactive,
+        });
+        qualificationHandled = true;
+        this.logger.log(
+          `[WhatsApp Handler] Dispatched interactive reply to LeadQualificationService for Conversation "${conversation.id}".`,
+        );
+      } catch (err: any) {
+        this.logger.error(
+          `[WhatsApp Handler ERROR] Failed to process qualification reply for Conversation "${conversation.id}": ${err.message}`,
+        );
+      }
+    }
+
+    // 7. Trigger Matching Engine for new leads
     if (isNewLead) {
       try {
         await this.matchesService.generateMatchesForLead(lead.id);
@@ -231,6 +277,8 @@ export class WhatsAppMessagesHandler {
       messageId: message.id,
       isNewLead,
       phone: normalizedPhone,
+      qualificationStarted,
+      qualificationHandled,
     };
   }
 

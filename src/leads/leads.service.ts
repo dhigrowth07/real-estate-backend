@@ -26,7 +26,7 @@ export class LeadsService {
    * Create a new Lead with optional auto-assignment for Agents and triggers matching scan
    */
   async create(user: any, dto: CreateLeadDto) {
-    if (dto.budgetMin > dto.budgetMax) {
+    if (dto.budgetMin != null && dto.budgetMax != null && dto.budgetMin > dto.budgetMax) {
       throw new BadRequestException('Minimum budget cannot exceed maximum budget.');
     }
 
@@ -183,7 +183,7 @@ export class LeadsService {
 
     const budgetMin = dto.budgetMin !== undefined ? dto.budgetMin : existing.budgetMin;
     const budgetMax = dto.budgetMax !== undefined ? dto.budgetMax : existing.budgetMax;
-    if (budgetMin > budgetMax) {
+    if (budgetMin != null && budgetMax != null && budgetMin > budgetMax) {
       throw new BadRequestException('Minimum budget cannot exceed maximum budget.');
     }
 

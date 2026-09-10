@@ -432,7 +432,7 @@ export class WhatsAppTemplateService implements OnModuleInit {
   /**
    * Helper: Formats lead display name
    */
-  private formatLeadDisplayName(name?: string): string {
+  private formatLeadDisplayName(name?: string | null): string {
     if (!name) return 'there';
     if (name.startsWith('Instagram User') || name.startsWith('WhatsApp User')) {
       return 'there';

@@ -1,12 +1,16 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
 import { InstagramMessagesHandler } from './instagram-messages.handler';
+import { InstagramProfileService } from '../instagram-profile.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PhoneExtractionService } from '../../common/phone/phone-extraction.service';
 import { MergeLeadsService } from '../../leads/merge-leads.service';
 import { WhatsAppTemplateService } from '../../whatsapp/whatsapp-template.service';
-import { LeadStage, ChannelType, LeadSource } from '@prisma/client';
+import { LeadStage, ChannelType, LeadSource, LeadQualificationStatus } from '@prisma/client';
 
 import { MatchesService } from '../../matches/matches.service';
+
+import { LeadQualificationService } from '../../leads/lead-qualification.service';
 
 describe('InstagramMessagesHandler', () => {
   let handler: InstagramMessagesHandler;
@@ -15,29 +19,33 @@ describe('InstagramMessagesHandler', () => {
   let mergeLeadsService: MergeLeadsService;
   let whatsAppTemplateService: WhatsAppTemplateService;
   let matchesService: MatchesService;
+  let instagramProfileService: InstagramProfileService;
+  let leadQualificationService: LeadQualificationService;
 
-  const mockPrisma = {
+  const mockPrisma: any = {
     message: {
       findUnique: jest.fn(),
-      create: jest.fn().mockImplementation((args) =>
+      create: jest.fn().mockImplementation((args: any) =>
         Promise.resolve({ id: 'msg-uuid-1', ...args.data }),
       ),
     },
     lead: {
       findUnique: jest.fn(),
-      create: jest.fn().mockImplementation((args) =>
+      findFirst: jest.fn(),
+      create: jest.fn().mockImplementation((args: any) =>
         Promise.resolve({ id: 'lead-uuid-1', ...args.data }),
       ),
-      update: jest.fn().mockImplementation((args) =>
+      update: jest.fn().mockImplementation((args: any) =>
         Promise.resolve({ id: args.where.id, ...args.data }),
       ),
     },
     conversation: {
-      upsert: jest.fn().mockImplementation((args) =>
+      upsert: jest.fn().mockImplementation((args: any) =>
         Promise.resolve({ id: 'conv-uuid-1', ...args.create }),
       ),
     },
     pendingInterest: {
+      findFirst: jest.fn().mockResolvedValue(null),
       findMany: jest.fn(),
       updateMany: jest.fn(),
     },
@@ -45,12 +53,12 @@ describe('InstagramMessagesHandler', () => {
       findFirst: jest.fn().mockResolvedValue({ id: 'admin-1', role: 'ADMIN' }),
     },
     notification: {
-      create: jest.fn().mockImplementation((args) =>
+      create: jest.fn().mockImplementation((args: any) =>
         Promise.resolve({ id: 'notif-1', ...args.data }),
       ),
     },
     interaction: {
-      create: jest.fn().mockImplementation((args) =>
+      create: jest.fn().mockImplementation((args: any) =>
         Promise.resolve({ id: 'inter-1', ...args.data }),
       ),
     },
@@ -61,7 +69,7 @@ describe('InstagramMessagesHandler', () => {
   };
 
   const mockMergeLeadsService = {
-    mergeLeadByPhone: jest.fn().mockImplementation((leadId, phone) => {
+    mergeLeadByPhone: jest.fn().mockImplementation((leadId: string, phone: string) => {
       return Promise.resolve({
         primaryLead: { id: leadId, phone },
         merged: false,
@@ -78,22 +86,39 @@ describe('InstagramMessagesHandler', () => {
     generateMatchesForLead: jest.fn().mockResolvedValue([]),
   };
 
+  const mockInstagramProfileService = {
+    getProfile: jest.fn().mockResolvedValue(null),
+  };
+
+  const mockLeadQualificationService = {
+    startQualification: jest.fn().mockResolvedValue({ success: true, onboardingStep: 'ASK_PROPERTY_TYPE' }),
+    handleReply: jest.fn().mockResolvedValue({ handled: true }),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
+    jest.spyOn(global, 'fetch').mockImplementation(
+      () => Promise.resolve({ ok: false, json: () => Promise.resolve({}) } as any),
+    );
 
-    mockPrisma.lead.update.mockImplementation((args) =>
+    mockPrisma.lead.update.mockImplementation((args: any) =>
       Promise.resolve({ id: args.where.id, ...args.data }),
     );
     mockWhatsAppTemplateService.sendPropertyDetailsTemplate.mockResolvedValue({ success: true });
+    mockInstagramProfileService.getProfile.mockResolvedValue(null);
+    mockLeadQualificationService.startQualification.mockResolvedValue({ success: true, onboardingStep: 'ASK_PROPERTY_TYPE' });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         InstagramMessagesHandler,
         { provide: PrismaService, useValue: mockPrisma },
+        { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue('mock_token') } },
+        { provide: InstagramProfileService, useValue: mockInstagramProfileService },
         { provide: PhoneExtractionService, useValue: mockPhoneService },
         { provide: MergeLeadsService, useValue: mockMergeLeadsService },
         { provide: WhatsAppTemplateService, useValue: mockWhatsAppTemplateService },
         { provide: MatchesService, useValue: mockMatchesService },
+        { provide: LeadQualificationService, useValue: mockLeadQualificationService },
       ],
     }).compile();
 
@@ -103,6 +128,8 @@ describe('InstagramMessagesHandler', () => {
     mergeLeadsService = module.get<MergeLeadsService>(MergeLeadsService);
     whatsAppTemplateService = module.get<WhatsAppTemplateService>(WhatsAppTemplateService);
     matchesService = module.get<MatchesService>(MatchesService);
+    instagramProfileService = module.get<InstagramProfileService>(InstagramProfileService);
+    leadQualificationService = module.get<LeadQualificationService>(LeadQualificationService);
   });
 
   it('should skip duplicate messages by externalMessageId', async () => {
@@ -118,20 +145,28 @@ describe('InstagramMessagesHandler', () => {
     expect(mockPrisma.message.create).not.toHaveBeenCalled();
   });
 
-  it('should create new Unqualified lead and leave as UNQUALIFIED when no phone is found', async () => {
+  it('should create new Unqualified lead with real name when profile API succeeds', async () => {
     mockPrisma.message.findUnique.mockResolvedValue(null);
     mockPrisma.lead.findUnique.mockResolvedValue(null);
     mockPhoneService.extractPhoneNumber.mockReturnValue({ found: false, confidence: 'NONE' });
+    mockInstagramProfileService.getProfile.mockResolvedValue({
+      name: 'Aditya Verma',
+      username: 'aditya_v',
+      profilePic: 'https://fbcdn.net/pic.jpg',
+    });
 
     const result = await handler.handleInboundDm({
       sender: { id: 'ig_user_456' },
       message: { mid: 'mid.new_msg_456', text: 'Hey, I want to know more about the 2BHK.' },
     });
 
+    expect(mockInstagramProfileService.getProfile).toHaveBeenCalledWith('ig_user_456');
     expect(mockPrisma.lead.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
+        name: 'Aditya Verma (@aditya_v)',
         instagramUserId: 'ig_user_456',
         stage: LeadStage.UNQUALIFIED,
+        qualificationStatus: LeadQualificationStatus.UNQUALIFIED,
         source: LeadSource.INSTAGRAM,
         sources: ['Instagram'],
       }),
@@ -143,6 +178,48 @@ describe('InstagramMessagesHandler', () => {
         whatsappDeliveryEligible: false,
       }),
     );
+  });
+
+  it('should fallback to username when profile name is unavailable', async () => {
+    mockPrisma.message.findUnique.mockResolvedValue(null);
+    mockPrisma.lead.findUnique.mockResolvedValue(null);
+    mockPhoneService.extractPhoneNumber.mockReturnValue({ found: false, confidence: 'NONE' });
+    mockInstagramProfileService.getProfile.mockResolvedValue({
+      name: null,
+      username: 'priya_realty',
+      profilePic: null,
+    });
+
+    await handler.handleInboundDm({
+      sender: { id: 'ig_user_username_only' },
+      message: { mid: 'mid.username_msg', text: 'Is this available?' },
+    });
+
+    expect(mockPrisma.lead.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        name: '@priya_realty',
+        instagramUserId: 'ig_user_username_only',
+      }),
+    });
+  });
+
+  it('should set name to null rather than placeholder string when profile is unavailable', async () => {
+    mockPrisma.message.findUnique.mockResolvedValue(null);
+    mockPrisma.lead.findUnique.mockResolvedValue(null);
+    mockPhoneService.extractPhoneNumber.mockReturnValue({ found: false, confidence: 'NONE' });
+    mockInstagramProfileService.getProfile.mockResolvedValue(null);
+
+    await handler.handleInboundDm({
+      sender: { id: 'ig_user_no_profile' },
+      message: { mid: 'mid.no_profile_msg', text: 'Details please' },
+    });
+
+    expect(mockPrisma.lead.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        name: null,
+        instagramUserId: 'ig_user_no_profile',
+      }),
+    });
   });
 
   it('should extract phone number, set opt-in, upgrade stage to NEW, correlate PendingInterest, and mark WhatsApp delivery eligible', async () => {
@@ -355,5 +432,64 @@ describe('InstagramMessagesHandler', () => {
     // Phone extracted & stage NEW, but whatsappDeliveryEligible is false because interestedPropertyId is not known
     expect(result?.phoneExtracted).toBe(true);
     expect(result?.whatsappDeliveryEligible).toBe(false);
+    expect(result?.whatsappDelivered).toBe(false);
+    expect(mockWhatsAppTemplateService.sendPropertyDetailsTemplate).not.toHaveBeenCalled();
+    // But qualification bot is triggered because phone & whatsappOptIn exist!
+    expect(mockLeadQualificationService.startQualification).toHaveBeenCalledWith('lead-no-prop');
+    expect(result?.qualificationStarted).toBe(true);
+  });
+
+  it('should automatically trigger startQualification when phone is captured and lead is UNQUALIFIED', async () => {
+    mockPrisma.message.findUnique.mockResolvedValue(null);
+    mockPrisma.lead.findUnique.mockResolvedValue({
+      id: 'lead-ig-qual-1',
+      instagramUserId: 'ig_user_qual',
+      stage: LeadStage.UNQUALIFIED,
+      qualificationStatus: LeadQualificationStatus.UNQUALIFIED,
+      sources: ['Instagram'],
+    });
+
+    mockPhoneService.extractPhoneNumber.mockReturnValue({
+      found: true,
+      e164: '+919876543210',
+      confidence: 'HIGH',
+    });
+
+    mockPrisma.pendingInterest.findMany.mockResolvedValue([]);
+
+    const result = await handler.handleInboundDm({
+      sender: { id: 'ig_user_qual' },
+      message: { mid: 'mid.qual_1', text: 'My number is +91 9876543210' },
+    });
+
+    expect(result?.qualificationStarted).toBe(true);
+    expect(mockLeadQualificationService.startQualification).toHaveBeenCalledWith('lead-ig-qual-1');
+  });
+
+  it('should not double-trigger qualification if lead is already IN_PROGRESS or QUALIFIED', async () => {
+    mockPrisma.message.findUnique.mockResolvedValue(null);
+    mockPrisma.lead.findUnique.mockResolvedValue({
+      id: 'lead-ig-already-in-prog',
+      instagramUserId: 'ig_user_in_prog',
+      stage: LeadStage.NEW,
+      qualificationStatus: LeadQualificationStatus.IN_PROGRESS,
+      sources: ['Instagram'],
+    });
+
+    mockPhoneService.extractPhoneNumber.mockReturnValue({
+      found: true,
+      e164: '+919876543210',
+      confidence: 'HIGH',
+    });
+
+    mockPrisma.pendingInterest.findMany.mockResolvedValue([]);
+
+    const result = await handler.handleInboundDm({
+      sender: { id: 'ig_user_in_prog' },
+      message: { mid: 'mid.in_prog_2', text: 'Here again: 9876543210' },
+    });
+
+    expect(result?.qualificationStarted).toBe(false);
+    expect(mockLeadQualificationService.startQualification).not.toHaveBeenCalled();
   });
 });

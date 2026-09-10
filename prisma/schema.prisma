@@ -49,6 +49,13 @@ enum LeadUrgency {
   EXPLORING
 }
 
+enum LeadQualificationStatus {
+  UNQUALIFIED
+  IN_PROGRESS
+  QUALIFIED
+  REQUESTED_AGENT
+}
+
 enum LeadStage {
   UNQUALIFIED
   NEW
@@ -165,35 +172,37 @@ model User {
 
 /// Represents buyer / tenant / investor inquiries & criteria
 model Lead {
-  id                    String         @id @default(uuid())
-  name                  String
-  phone                 String         @default("")
+  id                    String                  @id @default(uuid())
+  name                  String?
+  phone                 String                  @default("")
   email                 String?
-  source                LeadSource     @default(WEBSITE)
-  sources               String[]       @default([]) // Multi-attribution tracking (e.g. WEBSITE, INSTAGRAM_COMMENT)
-  budgetMin             Float          @default(0)
-  budgetMax             Float          @default(0)
-  preferredLocations    String[]       @default([])
-  propertyType          PropertyType   @default(APARTMENT)
+  source                LeadSource              @default(WEBSITE)
+  sources               String[]                @default([]) // Multi-attribution tracking (e.g. WEBSITE, INSTAGRAM_COMMENT)
+  budgetMin             Float?
+  budgetMax             Float?
+  preferredLocations    String[]                @default([])
+  propertyType          PropertyType?
   bhk                   String?
-  purpose               LeadPurpose    @default(BUY)
-  urgency               LeadUrgency    @default(IMMEDIATE)
-  stage                 LeadStage      @default(NEW)
+  purpose               LeadPurpose?
+  urgency               LeadUrgency?
+  stage                 LeadStage               @default(NEW)
+  qualificationStatus   LeadQualificationStatus @default(UNQUALIFIED)
   assignedAgentId       String?
-  assignedAgent         User?          @relation("AssignedAgent", fields: [assignedAgentId], references: [id], onDelete: SetNull)
-  instagramUserId       String?        @unique // Instagram Scoped User ID (IGSID) for DMs/Comments attribution
-  whatsappOptIn         Boolean        @default(false) // Verified WhatsApp opt-in consent status
-  whatsappOptInEvidence String?        // Message / timestamp text establishing consent
-  interestedPropertyId  String?        // Specific property user showed interest in
-  interestedProperty    Property?      @relation("InterestedLeads", fields: [interestedPropertyId], references: [id], onDelete: SetNull)
+  assignedAgent         User?                   @relation("AssignedAgent", fields: [assignedAgentId], references: [id], onDelete: SetNull)
+  instagramUserId       String?                 @unique // Instagram Scoped User ID (IGSID) for DMs/Comments attribution
+  whatsappOptIn         Boolean                 @default(false) // Verified WhatsApp opt-in consent status
+  whatsappOptInEvidence String?                 // Message / timestamp text establishing consent
+  interestedPropertyId  String?                 // Specific property user showed interest in
+  interestedProperty    Property?               @relation("InterestedLeads", fields: [interestedPropertyId], references: [id], onDelete: SetNull)
   matches               Match[]
   interactions          Interaction[]
   conversations         Conversation[]
-  createdAt             DateTime       @default(now())
-  updatedAt             DateTime       @updatedAt
-  deletedAt             DateTime?      // Soft delete timestamp
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+  deletedAt             DateTime?               // Soft delete timestamp
 
   @@index([stage])
+  @@index([qualificationStatus])
   @@index([source])
   @@index([urgency])
   @@index([propertyType])
@@ -334,23 +343,34 @@ enum MessageStatus {
   FAILED
 }
 
+enum OnboardingStep {
+  NOT_STARTED
+  ASK_PROPERTY_TYPE
+  ASK_BUDGET
+  ASK_LOCATION
+  ASK_TIMELINE
+  COMPLETE
+}
+
 /// Tracks two-way chat sessions across WhatsApp and Instagram
 model Conversation {
-  id              String       @id @default(uuid())
+  id              String         @id @default(uuid())
   leadId          String?
-  lead            Lead?        @relation(fields: [leadId], references: [id], onDelete: SetNull)
-  channel         ChannelType  // WHATSAPP or INSTAGRAM
-  externalId      String       // Phone number for WhatsApp or IGSID for Instagram
-  windowOpenUntil DateTime?    // 24-hour Meta messaging customer care session window
+  lead            Lead?          @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  channel         ChannelType    // WHATSAPP or INSTAGRAM
+  externalId      String         // Phone number for WhatsApp or IGSID for Instagram
+  windowOpenUntil DateTime?      // 24-hour Meta messaging customer care session window
+  onboardingStep  OnboardingStep @default(NOT_STARTED)
   messages        Message[]
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
 
   @@unique([channel, externalId])
   @@index([leadId])
   @@index([channel])
   @@index([externalId])
   @@index([windowOpenUntil])
+  @@index([onboardingStep])
   @@map("conversations")
 }
 

@@ -5,10 +5,13 @@ import { PhoneExtractionService } from '../../common/phone/phone-extraction.serv
 import { MergeLeadsService } from '../../leads/merge-leads.service';
 import { WhatsAppTemplateService } from '../../whatsapp/whatsapp-template.service';
 import { MatchesService } from '../../matches/matches.service';
+import { InstagramProfileService } from '../instagram-profile.service';
+import { LeadQualificationService } from '../../leads/lead-qualification.service';
 import {
   ChannelType,
   LeadSource,
   LeadStage,
+  LeadQualificationStatus,
   MessageDirection,
   MessageStatus,
   MessageType,
@@ -48,6 +51,7 @@ export interface InstagramDmProcessResult {
   whatsappDeliveryError?: string;
   manualFollowUpFlagged: boolean;
   merged?: boolean;
+  qualificationStarted?: boolean;
 }
 
 @Injectable()
@@ -57,10 +61,12 @@ export class InstagramMessagesHandler {
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
+    private readonly instagramProfileService: InstagramProfileService,
     private readonly phoneExtractionService: PhoneExtractionService,
     private readonly mergeLeadsService: MergeLeadsService,
     private readonly whatsAppTemplateService: WhatsAppTemplateService,
     private readonly matchesService: MatchesService,
+    private readonly leadQualificationService: LeadQualificationService,
   ) {}
 
   /**
@@ -138,17 +144,20 @@ export class InstagramMessagesHandler {
         orderBy: { createdAt: 'desc' },
       });
 
-      const profile = await this.fetchInstagramUserProfile(senderId);
+      const profile = await this.instagramProfileService.getProfile(senderId);
       const commenterUsername =
         directUsername || profile?.username || priorInterest?.commenterUsername;
 
-      let initialName = `Instagram User (${senderId.slice(-4)})`;
-      if (profile?.name) {
-        initialName = profile.username
-          ? `${profile.name} (@${profile.username})`
-          : profile.name;
-      } else if (commenterUsername) {
-        initialName = commenterUsername.startsWith('@') ? commenterUsername : `@${commenterUsername}`;
+      let initialName: string | null = null;
+      if (profile?.name && profile.name.trim()) {
+        initialName = profile.username && profile.username.trim()
+          ? `${profile.name.trim()} (@${profile.username.trim()})`
+          : profile.name.trim();
+      } else if (commenterUsername && commenterUsername.trim()) {
+        const clean = commenterUsername.trim();
+        initialName = clean.startsWith('@') ? clean : `@${clean}`;
+      } else {
+        initialName = null; // No placeholder string; leave null rather than guessing
       }
 
       lead = await this.prisma.lead.create({
@@ -158,14 +167,13 @@ export class InstagramMessagesHandler {
           source: LeadSource.INSTAGRAM,
           sources: ['Instagram'],
           stage: LeadStage.UNQUALIFIED,
+          qualificationStatus: LeadQualificationStatus.UNQUALIFIED,
           instagramUserId: senderId,
-          budgetMin: 0,
-          budgetMax: 0,
           preferredLocations: [],
         },
       });
       this.logger.log(
-        `[Instagram Inbound DM] Created new Unqualified Lead "${lead.id}" (${initialName}) for Instagram User "${senderId}"`,
+        `[Instagram Inbound DM] Created new Unqualified Lead "${lead.id}" (${initialName || 'Unnamed'}) for Instagram User "${senderId}"`,
       );
     }
 
@@ -264,7 +272,7 @@ export class InstagramMessagesHandler {
       // Resolve intelligent Lead Name from direct username, message text, Meta Graph API profile, or Instagram username
       let resolvedName = lead.name;
       const extractedName = this.extractNameFromMessage(rawText);
-      const profile = await this.fetchInstagramUserProfile(senderId);
+      const profile = await this.instagramProfileService.getProfile(senderId);
       const commenterUsername =
         directUsername ||
         profile?.username ||
@@ -272,12 +280,13 @@ export class InstagramMessagesHandler {
 
       if (extractedName) {
         resolvedName = extractedName;
-      } else if (profile?.name) {
-        resolvedName = profile.username
-          ? `${profile.name} (@${profile.username})`
-          : profile.name;
-      } else if (commenterUsername && (lead.name.startsWith('Instagram User') || !lead.name)) {
-        resolvedName = commenterUsername.startsWith('@') ? commenterUsername : `@${commenterUsername}`;
+      } else if (profile?.name && profile.name.trim()) {
+        resolvedName = profile.username && profile.username.trim()
+          ? `${profile.name.trim()} (@${profile.username.trim()})`
+          : profile.name.trim();
+      } else if (commenterUsername && (!lead.name || lead.name.startsWith('@'))) {
+        const clean = commenterUsername.trim();
+        resolvedName = clean.startsWith('@') ? clean : `@${clean}`;
       }
 
       // Ensure "Instagram" is present in sources array
@@ -287,6 +296,7 @@ export class InstagramMessagesHandler {
       }
 
       // Update Lead with name, phone, consent evidence, and upgrade stage to NEW
+      const priorQualificationStatus = lead.qualificationStatus;
       lead = await this.prisma.lead.update({
         where: { id: lead.id },
         data: {
@@ -299,6 +309,11 @@ export class InstagramMessagesHandler {
           sources: currentSources,
         },
       });
+
+      lead.qualificationStatus =
+        lead.qualificationStatus ||
+        priorQualificationStatus ||
+        LeadQualificationStatus.UNQUALIFIED;
 
       this.logger.log(
         `[Instagram Inbound DM] Upgraded Lead "${lead.id}" (${lead.name}) to stage "NEW", WhatsApp Opt-In verified, Property: "${interestedPropertyId || 'None'}".`,
@@ -400,6 +415,33 @@ export class InstagramMessagesHandler {
       }
     }
 
+    // =========================================================================
+    // STEP 6: AUTOMATIC TRIGGER — LEAD QUALIFICATION BOT (STAGE QB-7)
+    // =========================================================================
+    // When a phone number is successfully captured and WhatsApp opt-in is true,
+    // automatically initiate the qualification flow if not already started/qualified.
+    // =========================================================================
+    let qualificationStarted = false;
+    if (
+      phoneExtracted &&
+      lead.phone &&
+      lead.phone.trim().length > 5 &&
+      lead.whatsappOptIn &&
+      lead.qualificationStatus === LeadQualificationStatus.UNQUALIFIED
+    ) {
+      try {
+        await this.leadQualificationService.startQualification(lead.id);
+        qualificationStarted = true;
+        this.logger.log(
+          `[Stage QB-7 Qualification Trigger] Automatically initiated qualification flow for Instagram Lead "${lead.id}" (${lead.phone}).`,
+        );
+      } catch (err: any) {
+        this.logger.error(
+          `[Stage QB-7 Qualification Trigger ERROR] Failed to start qualification for Lead "${lead.id}": ${err.message}`,
+        );
+      }
+    }
+
     return {
       leadId: lead.id,
       conversationId: conversation.id,
@@ -411,6 +453,7 @@ export class InstagramMessagesHandler {
       whatsappDelivered,
       whatsappDeliveryError,
       manualFollowUpFlagged,
+      qualificationStarted,
     };
   }
 
@@ -542,53 +585,6 @@ export class InstagramMessagesHandler {
         return words
           .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
           .join(' ');
-      }
-    }
-
-    return null;
-  }
-
-  /**
-   * Queries Meta Graph API to fetch the prospect's real name and public username
-   */
-  private async fetchInstagramUserProfile(
-    igsid: string,
-  ): Promise<{ name?: string; username?: string } | null> {
-    const token =
-      this.configService.get<string>('INSTAGRAM_API_TOKEN') ||
-      this.configService.get<string>('META_PAGE_ACCESS_TOKEN') ||
-      this.configService.get<string>('WHATSAPP_API_TOKEN');
-
-    if (!token) {
-      this.logger.warn(`[Instagram Profile] No API token configured for profile lookup.`);
-      return null;
-    }
-
-    // Try Graph API endpoint variants for IGSID user profile
-    const endpoints = [
-      `https://graph.facebook.com/v20.0/${igsid}?fields=name,username,profile_pic&access_token=${token}`,
-      `https://graph.instagram.com/v20.0/${igsid}?fields=id,username,name&access_token=${token}`,
-      `https://graph.facebook.com/v20.0/${igsid}?fields=id,name&access_token=${token}`,
-    ];
-
-    for (const url of endpoints) {
-      try {
-        const res = await fetch(url);
-        if (res.ok) {
-          const data = await res.json();
-          this.logger.log(`[Instagram Profile Lookup Success] IGSID ${igsid}: ${JSON.stringify(data)}`);
-          return {
-            name: data?.name || undefined,
-            username: data?.username || undefined,
-          };
-        } else {
-          const errBody = await res.text();
-          this.logger.warn(
-            `[Instagram Profile Lookup Attempt Failed] URL: ${url.split('?')[0]}, Status: ${res.status}, Body: ${errBody}`,
-          );
-        }
-      } catch (err: any) {
-        this.logger.warn(`[Instagram Profile Fetch Error] ${err.message}`);
       }
     }
 

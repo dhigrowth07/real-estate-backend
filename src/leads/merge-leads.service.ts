@@ -121,7 +121,7 @@ export class MergeLeadsService {
     const mergedSources = Array.from(combinedSourcesSet).filter(Boolean);
 
     // 2. Attributes merging
-    const isPlaceholder = (name?: string) =>
+    const isPlaceholder = (name?: string | null) =>
       !name || name.startsWith('Instagram User') || name.startsWith('WhatsApp User');
 
     const mergedName = !isPlaceholder(primary.name)
@@ -145,8 +145,14 @@ export class MergeLeadsService {
         ? secondary.stage
         : primary.stage;
 
-    const mergedBudgetMin = primary.budgetMin > 0 ? primary.budgetMin : secondary.budgetMin;
-    const mergedBudgetMax = primary.budgetMax > 0 ? primary.budgetMax : secondary.budgetMax;
+    const mergedBudgetMin =
+      primary.budgetMin != null && primary.budgetMin > 0
+        ? primary.budgetMin
+        : secondary.budgetMin;
+    const mergedBudgetMax =
+      primary.budgetMax != null && primary.budgetMax > 0
+        ? primary.budgetMax
+        : secondary.budgetMax;
     const mergedPreferredLocations =
       primary.preferredLocations && primary.preferredLocations.length > 0
         ? primary.preferredLocations
@@ -249,7 +255,12 @@ export class MergeLeadsService {
   private calculateCompletenessScore(lead: Lead): number {
     let score = 0;
     if (lead.email) score += 2;
-    if (lead.budgetMax > 0 || lead.budgetMin > 0) score += 2;
+    if (
+      (lead.budgetMax != null && lead.budgetMax > 0) ||
+      (lead.budgetMin != null && lead.budgetMin > 0)
+    ) {
+      score += 2;
+    }
     if (Array.isArray(lead.preferredLocations) && lead.preferredLocations.length > 0) score += 2;
     if (lead.assignedAgentId) score += 2;
     if (lead.stage && lead.stage !== LeadStage.UNQUALIFIED && lead.stage !== LeadStage.NEW) score += 3;
